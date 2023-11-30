@@ -13,6 +13,7 @@ typedef struct {
     char *input_file;
     int logging;
     int memory;
+    int disk;
 } options_t;
 
 long getMs();

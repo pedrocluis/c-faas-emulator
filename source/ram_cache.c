@@ -2,9 +2,10 @@
 // Created by pedro on 08-11-2023.
 //
 #include <stdio.h>
+#include <string.h>
 #include "ram_cache.h"
 #include "invocation.h"
-
+#include "disk_cache.h"
 
 void * searchRam(char *function, ram_t *ram) {
 
@@ -56,7 +57,7 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
-int freeRam(int memory, ram_t *ram, int logging) {
+int freeRam(int memory, ram_t *ram, disk_t *disk, int logging) {
 
     ram_node * temp;
     int freed = 0;
@@ -68,6 +69,9 @@ int freeRam(int memory, ram_t *ram, int logging) {
         if(logging==1) {
             printf("Freed %d MB\n", temp->invocation->memory);
         }
+
+        insertDiskItem(temp->invocation, disk, logging);
+
         free(temp->invocation->occupied);
         free(temp->invocation);
         free(temp);

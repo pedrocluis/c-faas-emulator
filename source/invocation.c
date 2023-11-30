@@ -4,8 +4,10 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 #include "ram_cache.h"
 #include "invocation.h"
+#include "disk_cache.h"
 
 void line_to_invocation(invocation_t * invocation, char* line) {
     char *pt;
@@ -40,9 +42,12 @@ void line_to_invocation(invocation_t * invocation, char* line) {
 void allocate_invocation(args_t *args) {
 
     pthread_mutex_lock(&args->ram->cache_lock);
+
+    int disk_bool = 0;
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
         args->invocation->occupied = inRam->occupied;
+        free(inRam->hash_function);
         free(inRam);
         *(args->warmStarts)+=1;
     }
@@ -50,7 +55,7 @@ void allocate_invocation(args_t *args) {
     else {
         if (args->ram->memory < args->invocation->memory) {
             int freed;
-            freed = freeRam(args->invocation->memory - args->ram->memory, args->ram, args->logging);
+            freed = freeRam(args->invocation->memory - args->ram->memory, args->ram, args->disk, args->logging);
             if (freed == 0) {
                 printf("%s\n", "Failed invocation");
                 pthread_mutex_unlock(&args->ram->cache_lock);
@@ -58,13 +63,23 @@ void allocate_invocation(args_t *args) {
             }
         }
         args->ram->memory -= args->invocation->memory;
-    }
 
-    if (args->invocation->occupied == NULL) {
-        args->invocation->occupied = malloc(args->invocation->memory * MEGA);
-        memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
-        if (args->logging) {
-            printf("Allocated %d MB\n", args->invocation->memory);
+        void *inDisk = searchDisk(args->invocation->hash_function, args->disk);
+        if (inDisk != NULL) {
+            if (args->logging) {
+                printf("Brought %d MB from disk\n", args->invocation->memory);
+            }
+            args->invocation->occupied = inDisk;
+            disk_bool = 1;
+            *(args->lukewarmStarts)+=1;
+        }
+
+        if (disk_bool == 0) {
+            args->invocation->occupied = malloc(args->invocation->memory * MEGA);
+            memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
+            if (args->logging) {
+                printf("Allocated %d MB\n", args->invocation->memory);
+            }
         }
     }
     pthread_mutex_unlock(&args->ram->cache_lock);

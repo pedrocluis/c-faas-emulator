@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "ram_cache.h"
+#include "disk_cache.h"
 #include "option_reader.h"
 #include "invocation.h"
 #include <pthread.h>
@@ -11,13 +12,19 @@
 void main_loop(options_t *options) {
 
     int warm_starts = 0;
+    int lukewarm_starts = 0;
 
     //Start ram cache
     ram_t *ram = malloc(sizeof(ram_t));
     ram->memory = options->memory;
     ram->head = NULL;
     pthread_mutex_init(&ram->cache_lock, NULL);
-    pthread_mutex_init(&ram->mem_lock, NULL);
+
+    //Start disk cache
+    disk_t *disk = malloc(sizeof(disk_t));
+    disk->memory = options->disk *1000;
+    disk->head = NULL;
+    pthread_mutex_init(&disk->disk_lock, NULL);
 
     //Start thread-pool
     threadpool pool = thpool_init(16);
@@ -66,8 +73,10 @@ void main_loop(options_t *options) {
         args_t *args = malloc(sizeof(args_t));
         args->invocation = invocation;
         args->ram = ram;
+        args->disk = disk;
         args->logging = options->logging;
         args->warmStarts = &warm_starts;
+        args->lukewarmStarts = &lukewarm_starts;
 
         thpool_add_work(pool, (void *) allocate_invocation, args);
 
@@ -77,8 +86,11 @@ void main_loop(options_t *options) {
     thpool_wait(pool);
     thpool_destroy(pool);
 
+    freeDisk(options->disk * 1000, disk, options->logging);
+
     printf("Total invocations: %ld\n", count);
     printf("Warm starts: %d\n", warm_starts);
+    printf("Lukewarm starts: %d\n", lukewarm_starts);
 }
 
 int main(int argc, char **argv) {

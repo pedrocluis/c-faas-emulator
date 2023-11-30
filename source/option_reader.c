@@ -14,7 +14,7 @@ void read_options(options_t *options, int n, char **params) {
     options->logging = 0;
     options->memory = 0;
 
-    for( int i = 1; i < n; i+=2 ) {
+    for( int i = 1; i < n; i+=1 ) {
         if( strcmp( params[i], "-input" ) == 0 ) {
             options->input_file = params[i+1];
             continue;
@@ -24,6 +24,9 @@ void read_options(options_t *options, int n, char **params) {
         }
         if (strcmp(params[i], "-memory") == 0) {
             options->memory = atoi(params[i + 1]);
+        }
+        if (strcmp(params[i], "-disk") == 0) {
+            options->disk = atoi(params[i + 1]);
         }
     }
 }
