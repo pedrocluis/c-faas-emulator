@@ -15,6 +15,8 @@ add_executable(simulator main.c
         option_reader.c
         disk_cache.h
         disk_cache.c
+        stats.h
+        stats.c
 )
 
 find_package(Threads REQUIRED)

@@ -1,3 +1,0 @@
-/home/pedro/Desktop/c-faas-emulator/source/cmake-build-debug/CMakeFiles/simulator.dir
-/home/pedro/Desktop/c-faas-emulator/source/cmake-build-debug/CMakeFiles/edit_cache.dir
-/home/pedro/Desktop/c-faas-emulator/source/cmake-build-debug/CMakeFiles/rebuild_cache.dir

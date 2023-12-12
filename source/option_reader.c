@@ -28,5 +28,14 @@ void read_options(options_t *options, int n, char **params) {
         if (strcmp(params[i], "-disk") == 0) {
             options->disk = atoi(params[i + 1]);
         }
+        if (strcmp(params[i], "-threads") == 0) {
+            options->threads = atoi(params[i + 1]);
+        }
+        if (strcmp(params[i], "-r_threads") == 0) {
+            options->r_threads = atoi(params[i + 1]);
+        }
+        if (strcmp(params[i], "-w_threads") == 0) {
+            options->w_threads = atoi(params[i + 1]);
+        }
     }
 }

@@ -18,7 +18,7 @@ void line_to_invocation(invocation_t * invocation, char* line) {
             case 0:
                 break;
             case 1:
-                invocation->hash_function = malloc(sizeof (char) * 65);
+                invocation->hash_function = calloc(1, sizeof (char) * 65);
                 strncpy(invocation->hash_function, pt, strlen(pt));
                 break;
             case 2:
@@ -41,9 +41,10 @@ void line_to_invocation(invocation_t * invocation, char* line) {
 
 void allocate_invocation(args_t *args) {
 
-    pthread_mutex_lock(&args->ram->cache_lock);
+    long lat_start = getMs();
+    int cold = 0;
 
-    int disk_bool = 0;
+    pthread_mutex_lock(&args->ram->cache_lock);
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
         args->invocation->occupied = inRam->occupied;
@@ -55,8 +56,10 @@ void allocate_invocation(args_t *args) {
     else {
         if (args->ram->memory < args->invocation->memory) {
             int freed;
+
             freed = freeRam(args->invocation->memory - args->ram->memory, args->ram, args->disk, args->logging);
-            if (freed == 0) {
+
+            if (freed < args->invocation->memory - args->ram->memory) {
                 printf("%s\n", "Failed invocation");
                 pthread_mutex_unlock(&args->ram->cache_lock);
                 return;
@@ -64,17 +67,35 @@ void allocate_invocation(args_t *args) {
         }
         args->ram->memory -= args->invocation->memory;
 
-        void *inDisk = searchDisk(args->invocation->hash_function, args->disk);
-        if (inDisk != NULL) {
+        pthread_mutex_unlock(&args->ram->cache_lock);
+
+        pthread_cond_t cond;
+        pthread_mutex_t cond_lock;
+        int read_bool = 0;
+        pthread_mutex_init(&cond_lock, NULL);
+        pthread_cond_init(&cond, NULL);
+        args->invocation->cond = &cond;
+        args->invocation->cond_lock = &cond_lock;
+        args->invocation->conc_n = &read_bool;
+        addToReadBuffer(args->invocation, args->disk);
+        pthread_mutex_lock(&cond_lock);
+        while (read_bool == 0) {
+            pthread_cond_wait(&cond, &cond_lock);
+        }
+        pthread_mutex_unlock(&cond_lock);
+        pthread_mutex_destroy(&cond_lock);
+        pthread_cond_destroy(&cond);
+
+        pthread_mutex_lock(&args->ram->cache_lock);
+        if (read_bool == 1) {
             if (args->logging) {
                 printf("Brought %d MB from disk\n", args->invocation->memory);
             }
-            args->invocation->occupied = inDisk;
-            disk_bool = 1;
             *(args->lukewarmStarts)+=1;
         }
-
-        if (disk_bool == 0) {
+        else {
+            cold = 1;
+            *(args->coldStarts)+=1;
             args->invocation->occupied = malloc(args->invocation->memory * MEGA);
             memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
             if (args->logging) {
@@ -82,8 +103,23 @@ void allocate_invocation(args_t *args) {
             }
         }
     }
-    pthread_mutex_unlock(&args->ram->cache_lock);
 
+    long end_lat = getMs();
+    long lat = end_lat - lat_start;
+    int extra_sleep = 0;
+    if (cold) {
+        if (lat < COLD * 1000.0) {
+            lat = COLD * 1000.0;
+            extra_sleep = 1;
+        }
+    }
+
+    saveLatency(args->stats, lat);
+
+    pthread_mutex_unlock(&args->ram->cache_lock);
+    if (extra_sleep) {
+        usleep(lat * 1000);
+    }
     usleep(args->invocation->duration * 1000);
     pthread_mutex_lock(&args->ram->cache_lock);
     insertRamItem(args->invocation, args->ram);

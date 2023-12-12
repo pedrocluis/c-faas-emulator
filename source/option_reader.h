@@ -14,6 +14,9 @@ typedef struct {
     int logging;
     int memory;
     int disk;
+    int threads;
+    int r_threads;
+    int w_threads;
 } options_t;
 
 long getMs();

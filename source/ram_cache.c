@@ -57,30 +57,49 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
-int freeRam(int memory, ram_t *ram, disk_t *disk, int logging) {
+int freeRam(int memory, ram_t *ram, disk_t * disk, int logging) {
 
     ram_node * temp;
     int freed = 0;
+
+    int concurrent_free = 0;
+    int freed_n = 0;
+    pthread_cond_t cond_var;
+    pthread_mutex_t cond_lock;
+    pthread_mutex_init(&cond_lock, NULL);
+    pthread_cond_init(&cond_var, NULL);
+
     while (ram->head != NULL && freed < memory) {
         temp = ram->head;
+        temp->invocation->cond_lock = &cond_lock;
+        temp->invocation->cond = &cond_var;
+        temp->invocation->conc_freed = &concurrent_free;
+        temp->invocation->conc_n = &freed_n;
+        addToWriteBuffer(temp->invocation, disk);
         ram->head = ram->head->next;
-        ram->memory += temp->invocation->memory;
         freed += temp->invocation->memory;
-        if(logging==1) {
-            printf("Freed %d MB\n", temp->invocation->memory);
-        }
-
-        insertDiskItem(temp->invocation, disk, logging);
-
-        free(temp->invocation->occupied);
-        free(temp->invocation);
         free(temp);
+        freed_n++;
     }
-    if (freed >= memory) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
-}
 
+    pthread_mutex_unlock(&ram->cache_lock);
+
+    pthread_mutex_lock(&cond_lock);
+    while (freed_n > 0) {
+        pthread_cond_wait(&cond_var, &cond_lock);
+    }
+    pthread_mutex_unlock(&cond_lock);
+
+    pthread_mutex_destroy(&cond_lock);
+    pthread_cond_destroy(&cond_var);
+
+    int buffer_freed = 0;
+    if (concurrent_free < memory) {
+        buffer_freed = deleteBuffer(memory - concurrent_free, disk);
+    }
+
+    pthread_mutex_lock(&ram->cache_lock);
+    ram->memory += (concurrent_free + buffer_freed);
+
+    return concurrent_free + buffer_freed;
+}
