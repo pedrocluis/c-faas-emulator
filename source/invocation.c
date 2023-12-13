@@ -43,10 +43,12 @@ void allocate_invocation(args_t *args) {
 
     long lat_start = getMs();
     int cold = 0;
+    char type;
 
     pthread_mutex_lock(&args->ram->cache_lock);
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
+        type = 'w';
         args->invocation->occupied = inRam->occupied;
         free(inRam->hash_function);
         free(inRam);
@@ -69,31 +71,37 @@ void allocate_invocation(args_t *args) {
 
         pthread_mutex_unlock(&args->ram->cache_lock);
 
-        pthread_cond_t cond;
-        pthread_mutex_t cond_lock;
+        int foundInDisk;
+        foundInDisk = findInDisk(args->invocation->hash_function, args->disk);
         int read_bool = 0;
-        pthread_mutex_init(&cond_lock, NULL);
-        pthread_cond_init(&cond, NULL);
-        args->invocation->cond = &cond;
-        args->invocation->cond_lock = &cond_lock;
-        args->invocation->conc_n = &read_bool;
-        addToReadBuffer(args->invocation, args->disk);
-        pthread_mutex_lock(&cond_lock);
-        while (read_bool == 0) {
-            pthread_cond_wait(&cond, &cond_lock);
+        if (foundInDisk) {
+            pthread_cond_t cond;
+            pthread_mutex_t cond_lock;
+            pthread_mutex_init(&cond_lock, NULL);
+            pthread_cond_init(&cond, NULL);
+            args->invocation->cond = &cond;
+            args->invocation->cond_lock = &cond_lock;
+            args->invocation->conc_n = &read_bool;
+            addToReadBuffer(args->invocation, args->disk);
+            pthread_mutex_lock(&cond_lock);
+            while (read_bool == 0) {
+                pthread_cond_wait(&cond, &cond_lock);
+            }
+            pthread_mutex_unlock(&cond_lock);
+            pthread_mutex_destroy(&cond_lock);
+            pthread_cond_destroy(&cond);
         }
-        pthread_mutex_unlock(&cond_lock);
-        pthread_mutex_destroy(&cond_lock);
-        pthread_cond_destroy(&cond);
 
         pthread_mutex_lock(&args->ram->cache_lock);
         if (read_bool == 1) {
+            type = 'l';
             if (args->logging) {
                 printf("Brought %d MB from disk\n", args->invocation->memory);
             }
             *(args->lukewarmStarts)+=1;
         }
         else {
+            type = 'c';
             cold = 1;
             *(args->coldStarts)+=1;
             args->invocation->occupied = malloc(args->invocation->memory * MEGA);
@@ -114,7 +122,7 @@ void allocate_invocation(args_t *args) {
         }
     }
 
-    saveLatency(args->stats, lat);
+    saveLatency(args->stats, lat, type);
 
     pthread_mutex_unlock(&args->ram->cache_lock);
     if (extra_sleep) {

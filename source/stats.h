@@ -15,6 +15,6 @@ void initFiles(stats_t * stats);
 
 void closeFiles(stats_t * stats);
 
-void saveLatency(stats_t * stats, long lat);
+void saveLatency(stats_t * stats, long lat, char type);
 
 #endif //SIMULATOR_STATS_H

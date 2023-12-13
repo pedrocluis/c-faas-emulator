@@ -11,7 +11,7 @@
 
 #define WRITE 500.0
 #define READ 500.0
-#define COLD 2.5
+#define COLD 1.0
 
 typedef struct write_buffer_t {
     invocation_t *buffer[100];
@@ -55,5 +55,7 @@ int freeDisk(int memory, disk_t *disk);
 
 int deleteBuffer(int memory, disk_t * disk);
 void initDisk(disk_t * disk, options_t * options);
+
+int findInDisk(char * name, disk_t * disk);
 
 #endif //SIMULATOR_DISK_CACHE_H

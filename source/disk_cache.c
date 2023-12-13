@@ -127,7 +127,7 @@ void rejectWrite(invocation_t * invocation) {
 
 void addToWriteBuffer(invocation_t * invocation, disk_t * disk) {
     pthread_mutex_lock(&disk->write_buffer->write_lock);
-    if (disk->time_to_write > COLD/2.0) {
+    if (disk->time_to_write + invocation->memory / WRITE > COLD/2.0) {
         rejectWrite(invocation);
         pthread_mutex_unlock(&disk->write_buffer->write_lock);
         return;
@@ -147,6 +147,7 @@ void rejectRead(invocation_t * invocation) {
 }
 
 int findInDisk(char * name, disk_t * disk) {
+    pthread_mutex_lock(&disk->disk_lock);
     int found = 0;
     for(disk_node * node = disk->head; node != NULL; node = node->next) {
         if (node->usable == 1) {
@@ -156,6 +157,7 @@ int findInDisk(char * name, disk_t * disk) {
             }
         }
     }
+    pthread_mutex_unlock(&disk->disk_lock);
     return found;
 }
 
@@ -255,13 +257,8 @@ void readFromDisk(disk_t *disk) {
 
 void addToReadBuffer(invocation_t * invocation, disk_t * disk) {
 
-    int foundInDisk;
-    pthread_mutex_lock(&disk->disk_lock);
-    foundInDisk = findInDisk(invocation->hash_function, disk);
-    pthread_mutex_unlock(&disk->disk_lock);
-
     pthread_mutex_lock(&disk->read_buffer->read_lock);
-    if (disk->time_to_read > COLD || foundInDisk == 0) {
+    if (disk->time_to_read + invocation->memory / READ > COLD *0.75) {
         rejectRead(invocation);
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
         return;
