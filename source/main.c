@@ -10,22 +10,13 @@
 #include "C-Thread-Pool-master/thpool.h"
 #include "stats.h"
 
-void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read) {
+void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, ram_t * ram) {
     thpool_wait(master);
     thpool_destroy(master);
 
     invocation_t quit;
     quit.hash_function = "quit";
     quit.memory = 0;
-
-    pthread_mutex_lock(&disk->write_buffer->write_lock);
-    disk->write_buffer->buffer[0] = &quit;
-    disk->write_buffer->buffer_size = 1000;
-    pthread_cond_broadcast(&disk->write_buffer->cond_var);
-    pthread_mutex_unlock(&disk->write_buffer->write_lock);
-
-    thpool_wait(write);
-    thpool_destroy(write);
 
     pthread_mutex_lock(&disk->read_buffer->read_lock);
     disk->read_buffer->buffer[0] = &quit;
@@ -35,6 +26,13 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
 
     thpool_wait(read);
     thpool_destroy(read);
+
+    pthread_mutex_lock(&ram->cache_lock);
+    *(ram->cache_occupied) = -1;
+    pthread_mutex_unlock(&ram->cache_lock);
+
+    thpool_wait(write);
+    thpool_destroy(write);
 }
 
 void main_loop(options_t *options) {
@@ -46,9 +44,10 @@ void main_loop(options_t *options) {
     //Start ram cache
     ram_t *ram = malloc(sizeof(ram_t));
     ram->memory = options->memory;
+    ram->cache_occupied = malloc(sizeof (int));
+    *(ram->cache_occupied) = 0;
     ram->head = NULL;
     pthread_mutex_init(&ram->cache_lock, NULL);
-    pthread_mutex_init(&ram->memory_lock, NULL);
 
     //Start disk cache
     disk_t *disk = malloc(sizeof(disk_t));
@@ -56,14 +55,18 @@ void main_loop(options_t *options) {
 
     //Start thread-pools
     threadpool pool = thpool_init(options->threads);
-    threadpool write_pool = thpool_init(options->w_threads);
-    threadpool read_pool = thpool_init(options->r_threads);
-    for (int i = 0; i<options->w_threads; i++) {
-        thpool_add_work(write_pool, (void *) writeToDisk, disk);
+    threadpool write_pool = thpool_init(1);
+    threadpool read_pool = thpool_init(1);
+
+    check_ram_args * cr_args = malloc(sizeof (check_ram_args));
+    cr_args->disk = disk;
+    cr_args->ram = ram;
+    cr_args->max_memory = options->memory;
+    cr_args->logging = options->logging;
+    if(options->nodisk == 0) {
+        thpool_add_work(write_pool, (void *) writeToDisk, cr_args);
     }
-    for (int i = 0; i<options->r_threads; i++) {
-        thpool_add_work(read_pool, (void *) readFromDisk, disk);
-    }
+    thpool_add_work(read_pool, (void *) readFromDisk, disk);
 
     //Start stats
     stats_t * stats = malloc(sizeof (stats_t));
@@ -87,6 +90,11 @@ void main_loop(options_t *options) {
     long start = getMs();
 
     while (fgets(line, sizeof(line), fp) != NULL) {
+
+        long curr = getMs();
+        if (curr >= stats->lastMs + 1000*60) {
+            saveStarts(stats, curr);
+        }
 
         //Skip the first line
         if (first_line) {
@@ -125,10 +133,11 @@ void main_loop(options_t *options) {
     }
     fclose(fp);
 
-    endPools(disk, pool, write_pool, read_pool);
+    endPools(disk, pool, write_pool, read_pool, ram);
     freeDisk(options->disk * 1000, disk);
     closeFiles(stats);
     free(stats);
+    free(cr_args);
 
     printf("Total invocations: %ld\n", count);
     printf("Warm starts: %d\n", warm_starts);

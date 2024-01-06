@@ -45,34 +45,50 @@ void allocate_invocation(args_t *args) {
     int cold = 0;
     char type;
 
+    long freeRamLatency = 0;
+    long findInDiskLatency = 0;
+    long addToReadBufferLatency = 0;
+    long memsetLatency = 0;
+    long s;
+
     pthread_mutex_lock(&args->ram->cache_lock);
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
         type = 'w';
+
+        pthread_mutex_lock(&args->stats->lock_starts);
+        args->stats->warm += 1;
+        pthread_mutex_unlock(&args->stats->lock_starts);
+
         args->invocation->occupied = inRam->occupied;
         free(inRam->hash_function);
+        *(args->ram->cache_occupied) -= inRam->memory;
         free(inRam);
         *(args->warmStarts)+=1;
     }
 
     else {
         if (args->ram->memory < args->invocation->memory) {
-            int freed;
 
-            freed = freeRam(args->invocation->memory - args->ram->memory, args->ram, args->disk, args->logging);
+            int mem_needed = args->invocation->memory - args->ram->memory;
 
-            if (freed < args->invocation->memory - args->ram->memory) {
+            s = getMs();
+            int freed = freeRam(mem_needed, args->ram, args->logging);
+            freeRamLatency = getMs() - s;
+
+            if (freed == 0) {
                 printf("%s\n", "Failed invocation");
                 pthread_mutex_unlock(&args->ram->cache_lock);
                 return;
             }
         }
+
         args->ram->memory -= args->invocation->memory;
-
         pthread_mutex_unlock(&args->ram->cache_lock);
-
         int foundInDisk;
+        s = getMs();
         foundInDisk = findInDisk(args->invocation->hash_function, args->disk);
+        findInDiskLatency = getMs() - s;
         int read_bool = 0;
         if (foundInDisk) {
             pthread_cond_t cond;
@@ -82,7 +98,9 @@ void allocate_invocation(args_t *args) {
             args->invocation->cond = &cond;
             args->invocation->cond_lock = &cond_lock;
             args->invocation->conc_n = &read_bool;
+            s = getMs();
             addToReadBuffer(args->invocation, args->disk);
+            addToReadBufferLatency = getMs() - s;
             pthread_mutex_lock(&cond_lock);
             while (read_bool == 0) {
                 pthread_cond_wait(&cond, &cond_lock);
@@ -95,6 +113,9 @@ void allocate_invocation(args_t *args) {
         pthread_mutex_lock(&args->ram->cache_lock);
         if (read_bool == 1) {
             type = 'l';
+            pthread_mutex_lock(&args->stats->lock_starts);
+            args->stats->luke += 1;
+            pthread_mutex_unlock(&args->stats->lock_starts);
             if (args->logging) {
                 printf("Brought %d MB from disk\n", args->invocation->memory);
             }
@@ -102,10 +123,17 @@ void allocate_invocation(args_t *args) {
         }
         else {
             type = 'c';
+            pthread_mutex_lock(&args->stats->lock_starts);
+            args->stats->cold += 1;
+            pthread_mutex_unlock(&args->stats->lock_starts);
             cold = 1;
             *(args->coldStarts)+=1;
+            pthread_mutex_unlock(&args->ram->cache_lock);
+            s = getMs();
             args->invocation->occupied = malloc(args->invocation->memory * MEGA);
             memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
+            memsetLatency = getMs() - s;
+            pthread_mutex_lock(&args->ram->cache_lock);
             if (args->logging) {
                 printf("Allocated %d MB\n", args->invocation->memory);
             }
@@ -117,20 +145,18 @@ void allocate_invocation(args_t *args) {
     int extra_sleep = 0;
     if (cold) {
         if (lat < COLD * 1000.0) {
+            extra_sleep = (COLD * 1000.0) - lat;
             lat = COLD * 1000.0;
-            extra_sleep = 1;
         }
     }
 
-    saveLatency(args->stats, lat, type);
+    saveLatency(args->stats, lat, type, freeRamLatency, findInDiskLatency, addToReadBufferLatency, memsetLatency);
 
     pthread_mutex_unlock(&args->ram->cache_lock);
     if (extra_sleep) {
-        usleep(lat * 1000);
+        usleep(extra_sleep * 1000);
     }
     usleep(args->invocation->duration * 1000);
-    pthread_mutex_lock(&args->ram->cache_lock);
     insertRamItem(args->invocation, args->ram);
-    pthread_mutex_unlock(&args->ram->cache_lock);
     free(args);
 }

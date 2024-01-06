@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 typedef struct {
     char *input_file;
@@ -15,8 +16,9 @@ typedef struct {
     int memory;
     int disk;
     int threads;
-    int r_threads;
-    int w_threads;
+    int nodisk;
+    float write_speed;
+    float read_speed;
 } options_t;
 
 long getMs();
