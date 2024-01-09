@@ -227,9 +227,9 @@ void writeToDisk(check_ram_args * args) {
             break;
         }
 
-        if ((float)*(ram->cache_occupied) / (float)args->max_memory > MAX_THRESHOLD) {
+        if ((float)*(ram->cache_occupied) / (float)args->max_memory > disk->threshold) {
             buffer_size = 0;
-            while (ram->head != NULL && (float)*(ram->cache_occupied) / (float)args->max_memory > MIN_THRESHOLD) {
+            while (ram->head != NULL && (float)*(ram->cache_occupied) / (float)args->max_memory > disk->threshold) {
                 ram_node * iter = ram->head;
                 buffer[buffer_size] = iter->invocation;
                 *(ram->cache_occupied) -= buffer[buffer_size]->memory;
@@ -286,6 +286,7 @@ int freeDisk(int memory, disk_t *disk) {
 
 void initDisk(disk_t * disk, options_t * options) {
     disk->memory = options->disk *1000;
+    disk->threshold = (float)options->threshold * 0.01;
     disk->head = NULL;
     disk->time_to_read = 0;
     disk->read_buffer = malloc(sizeof (read_buffer_t));

@@ -9,8 +9,7 @@
 #include "invocation.h"
 #include "ram_cache.h"
 
-#define MAX_THRESHOLD 0.7
-#define MIN_THRESHOLD 0.7
+#define THRESHOLD 0.7
 #define COLD 0.250
 
 typedef struct read_buffer_t {
@@ -35,6 +34,7 @@ typedef struct disk_t{
     read_buffer_t * read_buffer;
     double time_to_read;
     float read_speed;
+    float threshold;
 } disk_t;
 
 typedef struct check_ram_args {

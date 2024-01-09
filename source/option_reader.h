@@ -19,6 +19,7 @@ typedef struct {
     int nodisk;
     float write_speed;
     float read_speed;
+    int threshold;
 } options_t;
 
 long getMs();

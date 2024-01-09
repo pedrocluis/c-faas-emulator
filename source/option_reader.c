@@ -20,32 +20,80 @@ void test_speeds(options_t * options) {
 
     printf("Testing the disk speeds\n");
 
-    void * test_block = calloc(1, 2000000000);
-    memset(test_block, 123, 2000000000);
+    void * test_block1 = calloc(1, 200000000);
+    memset(test_block1, 123, 200000000);
+    void * test_block2 = calloc(1, 200000000);
+    memset(test_block2, 123, 200000000);
+    void * test_block3 = calloc(1, 200000000);
+    memset(test_block3, 123, 200000000);
+    void * test_block4 = calloc(1, 200000000);
+    memset(test_block4, 123, 200000000);
+    void * test_block5 = calloc(1, 200000000);
+    memset(test_block5, 123, 200000000);
 
-    FILE * test_file = fopen(".test", "w");
     write_start = getMs();
-    fwrite(test_block, 2000000000, 1, test_file);
+    FILE * test_file1 = fopen(".test1", "w");
+    fwrite(test_block1, 200000000, 1, test_file1);
+    FILE * test_file2 = fopen(".test2", "w");
+    fwrite(test_block2, 200000000, 1, test_file2);
+    FILE * test_file3 = fopen(".test3", "w");
+    fwrite(test_block3, 200000000, 1, test_file3);
+    FILE * test_file4 = fopen(".test4", "w");
+    fwrite(test_block4, 200000000, 1, test_file4);
+    FILE * test_file5 = fopen(".test5", "w");
+    fwrite(test_block5, 200000000, 1, test_file5);
     write_end = getMs();
-    fclose(test_file);
-    free(test_block);
+    fclose(test_file1);
+    fclose(test_file2);
+    fclose(test_file3);
+    fclose(test_file4);
+    fclose(test_file5);
+    free(test_block1);
+    free(test_block2);
+    free(test_block3);
+    free(test_block4);
+    free(test_block5);
 
 
-    test_block = calloc(1, 2000000000);
-    test_file = fopen(".test", "r");
+    test_block1 = calloc(1, 200000000);
+    test_block2 = calloc(1, 200000000);
+    test_block3 = calloc(1, 200000000);
+    test_block4 = calloc(1, 200000000);
+    test_block5 = calloc(1, 200000000);
     read_start = getMs();
-    fread(test_block, 2000000000, 1, test_file);
-    fclose(test_file);
+    test_file1 = fopen(".test1", "r");
+    fread(test_block1, 200000000, 1, test_file1);
+    test_file2 = fopen(".test2", "r");
+    fread(test_block2, 200000000, 1, test_file2);
+    test_file3 = fopen(".test3", "r");
+    fread(test_block3, 200000000, 1, test_file3);
+    test_file4 = fopen(".test4", "r");
+    fread(test_block4, 200000000, 1, test_file4);
+    test_file5 = fopen(".test5", "r");
+    fread(test_block5, 200000000, 1, test_file5);
     read_end = getMs();
-    free(test_block);
+    fclose(test_file1);
+    fclose(test_file2);
+    fclose(test_file3);
+    fclose(test_file4);
+    fclose(test_file5);
+    free(test_block1);
+    free(test_block2);
+    free(test_block3);
+    free(test_block4);
+    free(test_block5);
 
-    remove(".test");
+    remove(".test1");
+    remove(".test2");
+    remove(".test3");
+    remove(".test4");
+    remove(".test5");
 
     write_duration = ((double)write_end - (double)write_start) * 0.001;
     read_duration = ((double)read_end - (double)read_start) * 0.001;
 
-    write_speed = 2000.0 / write_duration;
-    read_speed = 2000.0 / read_duration;
+    write_speed = 1000.0 / write_duration;
+    read_speed = 1000.0 / read_duration;
     //read_speed = 489.1;
 
     printf("Write speed: %f MB/s\n", write_speed);
@@ -80,6 +128,9 @@ void read_options(options_t *options, int n, char **params) {
         }
         if (strcmp(params[i], "-threads") == 0) {
             options->threads = atoi(params[i + 1]);
+        }
+        if (strcmp(params[i], "-threshold") == 0) {
+            options->threshold = atoi(params[i + 1]);
         }
     }
 
