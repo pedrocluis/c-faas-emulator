@@ -14,27 +14,9 @@ void createFile(disk_node * new_node, invocation_t * invocation, disk_t * disk) 
     strncpy(cache_file, "cache/", strlen("cache/"));
     strcat(cache_file, new_node->function);
 
-    int i = 0;
-    char * number = calloc(sizeof (char) * 5, 1);
-    sprintf(number, "%d", i);
-    char * temp = calloc(sizeof (char) * 80, 1);
-    strncpy(temp, cache_file, strlen(cache_file));
-    strcat(temp, number);
-    while (access(temp, F_OK) == 0) {
-        memset(temp,0,strlen(temp));
-        memset(number,0,strlen(number));
-        i++;
-        sprintf(number, "%d", i);
-        strncpy(temp, cache_file, strlen(cache_file));
-        strcat(temp, number);
-    }
-    free(cache_file);
-    free(number);
-
     new_node->file = calloc(1, sizeof (char) * 80);
-    new_node->usable = 1;
-    strncpy(new_node->file, temp, strlen(temp));
-    free(temp);
+    strncpy(new_node->file, cache_file, strlen(cache_file));
+    free(cache_file);
 
     FILE * fileptr = fopen(new_node->file, "w");
     pthread_mutex_unlock(&disk->disk_lock);
@@ -54,11 +36,9 @@ int findInDisk(char * name, disk_t * disk) {
     pthread_mutex_lock(&disk->disk_lock);
     int found = 0;
     for(disk_node * node = disk->head; node != NULL; node = node->next) {
-        if (node->usable == 1) {
-            if (strcmp(node->function, name) == 0) {
-                found = 1;
-                break;
-            }
+        if (strcmp(node->function, name) == 0) {
+            found = 1;
+            break;
         }
     }
     pthread_mutex_unlock(&disk->disk_lock);
@@ -69,34 +49,20 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
     pthread_mutex_lock(&disk->disk_lock);
 
     disk_node * temp = disk->head;
-    disk_node * prev;
 
-    if (temp != NULL && (strcmp(temp->function, invocation->hash_function) == 0) && temp->usable == 1) {
-        temp->usable = 0;
+    if (temp != NULL && (strcmp(temp->function, invocation->hash_function) == 0)) {
         invocation->occupied = malloc(temp->memory * MEGA);
         FILE * fptr = fopen(temp->file, "r");
         pthread_mutex_unlock(&disk->disk_lock);
         fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
         pthread_mutex_lock(&disk->disk_lock);
         fclose(fptr);
-        remove(temp->file);
-        disk->memory += (int)temp->memory;
-        disk->head = temp->next;
-        free(temp->file);
-        free(temp->function);
-        free(temp);
         pthread_mutex_unlock(&disk->disk_lock);
         return;
     }
 
     while (temp != NULL) {
-        if (temp->usable == 0) {
-            prev = temp;
-            temp = temp->next;
-            continue;
-        }
         if (strcmp(temp->function, invocation->hash_function) != 0) {
-            prev = temp;
             temp = temp->next;
             continue;
         }
@@ -110,19 +76,12 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
     }
 
     // Remove the node
-    temp->usable = 0;
-    disk->memory += (int)temp->memory;
     invocation->occupied = malloc(temp->memory * MEGA);
     FILE * fptr = fopen(temp->file, "r");
     pthread_mutex_unlock(&disk->disk_lock);
     fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
     pthread_mutex_lock(&disk->disk_lock);
     fclose(fptr);
-    remove(temp->file);
-    prev->next = temp->next;
-    free(temp->file);
-    free(temp->function);
-    free(temp);
     pthread_mutex_unlock(&disk->disk_lock);
 }
 
@@ -243,9 +202,12 @@ void writeToDisk(check_ram_args * args) {
         if (buffer_size != 0) {
             int i = 0;
             while (i < buffer_size) {
-                insertDiskItem(buffer[i], disk);
-                if (args->logging == 1) {
-                    printf("Stored %d MB in disk\n", buffer[i]->memory);
+
+                if (findInDisk(buffer[i]->hash_function, disk) == 0) {
+                    insertDiskItem(buffer[i], disk);
+                    if (args->logging == 1) {
+                        printf("Stored %d MB in disk\n", buffer[i]->memory);
+                    }
                 }
                 free(buffer[i]->occupied);
                 free(buffer[i]->hash_function);

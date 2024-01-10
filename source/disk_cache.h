@@ -23,7 +23,6 @@ typedef struct disk_node{
     char * function;
     char * file;
     long memory;
-    int usable;
     void * next;
 } disk_node;
 
