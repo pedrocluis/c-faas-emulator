@@ -101,7 +101,7 @@ void allocate_invocation(args_t *args) {
             args->invocation->cond_lock = &cond_lock;
             args->invocation->conc_n = &read_bool;
             s = getMs();
-            addToReadBuffer(args->invocation, args->disk);
+            addToReadBuffer(args->invocation, args->disk, args->cold_lat);
             addToReadBufferLatency = getMs() - s;
             pthread_mutex_lock(&cond_lock);
             while (read_bool == 0) {
@@ -146,9 +146,9 @@ void allocate_invocation(args_t *args) {
     long lat = end_lat - lat_start;
     int extra_sleep = 0;
     if (cold) {
-        if (lat < COLD * 1000.0) {
-            extra_sleep = (COLD * 1000.0) - lat;
-            lat = COLD * 1000.0;
+        if (lat < args->cold_lat * 1000.0) {
+            extra_sleep = (args->cold_lat * 1000.0) - lat;
+            lat = args->cold_lat * 1000.0;
         }
     }
 

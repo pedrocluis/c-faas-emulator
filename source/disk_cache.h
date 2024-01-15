@@ -10,7 +10,7 @@
 #include "ram_cache.h"
 
 #define THRESHOLD 0.7
-#define COLD 0.250
+//#define COLD 0.250
 
 typedef struct read_buffer_t {
     invocation_t *buffer[100];
@@ -43,7 +43,7 @@ typedef struct check_ram_args {
     int logging;
 } check_ram_args;
 
-void addToReadBuffer(invocation_t * invocation, disk_t * disk);
+void addToReadBuffer(invocation_t * invocation, disk_t * disk, float cold_lat);
 void readFromDisk(disk_t *disk);
 int findInDisk(char * name, disk_t * disk);
 

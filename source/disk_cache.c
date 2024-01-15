@@ -118,10 +118,10 @@ void readFromDisk(disk_t *disk) {
     }
 }
 
-void addToReadBuffer(invocation_t * invocation, disk_t * disk) {
+void addToReadBuffer(invocation_t * invocation, disk_t * disk, float cold_lat) {
 
     pthread_mutex_lock(&disk->read_buffer->read_lock);
-    if (disk->time_to_read + (float)invocation->memory / disk->read_speed >= 0.8 * COLD || disk->read_buffer->buffer_size >= 100) {
+    if (disk->time_to_read + (float)invocation->memory / disk->read_speed >= 0.8 * cold_lat || disk->read_buffer->buffer_size >= 100) {
         rejectRead(invocation);
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
         return;

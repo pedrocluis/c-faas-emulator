@@ -126,6 +126,7 @@ void main_loop(options_t *options) {
         args->warmStarts = &warm_starts;
         args->lukewarmStarts = &lukewarm_starts;
         args->coldStarts = &cold_starts;
+        args->cold_lat = options->cold_latency;
         args->stats = stats;
 
         thpool_add_work(pool, (void *) allocate_invocation, args);

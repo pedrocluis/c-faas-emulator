@@ -33,6 +33,7 @@ typedef struct args_t{
     int * warmStarts;
     int * lukewarmStarts;
     int * coldStarts;
+    float cold_lat;
     stats_t * stats;
 } args_t;
 

@@ -20,6 +20,7 @@ typedef struct {
     float write_speed;
     float read_speed;
     int threshold;
+    float cold_latency;
 } options_t;
 
 long getMs();

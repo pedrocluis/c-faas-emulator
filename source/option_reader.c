@@ -132,6 +132,9 @@ void read_options(options_t *options, int n, char **params) {
         if (strcmp(params[i], "-threshold") == 0) {
             options->threshold = atoi(params[i + 1]);
         }
+        if (strcmp(params[i], "-cold") == 0) {
+            options->cold_latency = 0.001 * (float)(atoi(params[i + 1]));
+        }
     }
 
     test_speeds(options);
