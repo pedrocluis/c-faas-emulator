@@ -23,6 +23,8 @@ typedef struct stats_t {
     FILE * f_warm;
     int luke;
     FILE * f_lukewarm;
+    int failed;
+    FILE * f_failed;
 
     threadpool pool;
 }stats_t;

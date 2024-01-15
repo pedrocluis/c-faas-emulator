@@ -77,7 +77,9 @@ void allocate_invocation(args_t *args) {
             freeRamLatency = getMs() - s;
 
             if (freed == 0) {
-                printf("%s\n", "Failed invocation");
+                pthread_mutex_lock(&args->stats->lock_starts);
+                args->stats->failed += 1;
+                pthread_mutex_unlock(&args->stats->lock_starts);
                 pthread_mutex_unlock(&args->ram->cache_lock);
                 return;
             }
