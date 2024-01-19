@@ -52,10 +52,11 @@ void allocate_invocation(args_t *args) {
     long s;
 
     pthread_mutex_lock(&args->ram->cache_lock);
+    //First check if the function is in RAM
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
         type = 'w';
-
+        //If it's in RAM, it's a warm start, and we don't need to touch memory values
         pthread_mutex_lock(&args->stats->lock_starts);
         args->stats->warm += 1;
         pthread_mutex_unlock(&args->stats->lock_starts);
@@ -68,6 +69,7 @@ void allocate_invocation(args_t *args) {
     }
 
     else {
+        //If we don't have enough memory try to free it
         if (args->ram->memory < args->invocation->memory) {
 
             int mem_needed = args->invocation->memory - args->ram->memory;
@@ -77,6 +79,7 @@ void allocate_invocation(args_t *args) {
             freeRamLatency = getMs() - s;
 
             if (freed == 0) {
+                //Invocation has failed due to lack of memory
                 pthread_mutex_lock(&args->stats->lock_starts);
                 args->stats->failed += 1;
                 pthread_mutex_unlock(&args->stats->lock_starts);
@@ -85,6 +88,7 @@ void allocate_invocation(args_t *args) {
             }
         }
 
+        //Update RAM memory
         args->ram->memory -= args->invocation->memory;
         pthread_mutex_unlock(&args->ram->cache_lock);
         int foundInDisk;
@@ -93,6 +97,7 @@ void allocate_invocation(args_t *args) {
         findInDiskLatency = getMs() - s;
         int read_bool = 0;
         if (foundInDisk) {
+            //Function is present in disk cache
             pthread_cond_t cond;
             pthread_mutex_t cond_lock;
             pthread_mutex_init(&cond_lock, NULL);
@@ -101,6 +106,7 @@ void allocate_invocation(args_t *args) {
             args->invocation->cond_lock = &cond_lock;
             args->invocation->conc_n = &read_bool;
             s = getMs();
+            //Add function to read queue and wait for signal that it has been read
             addToReadBuffer(args->invocation, args->disk, args->cold_lat);
             addToReadBufferLatency = getMs() - s;
             pthread_mutex_lock(&cond_lock);
@@ -124,6 +130,7 @@ void allocate_invocation(args_t *args) {
             *(args->lukewarmStarts)+=1;
         }
         else {
+            //If it's not in disk or the read has been rejected, it's a cold start
             type = 'c';
             pthread_mutex_lock(&args->stats->lock_starts);
             args->stats->cold += 1;
@@ -132,6 +139,7 @@ void allocate_invocation(args_t *args) {
             *(args->coldStarts)+=1;
             pthread_mutex_unlock(&args->ram->cache_lock);
             s = getMs();
+            //Allocate memory and set it to occupy function memory
             args->invocation->occupied = malloc(args->invocation->memory * MEGA);
             memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
             memsetLatency = getMs() - s;
@@ -146,12 +154,14 @@ void allocate_invocation(args_t *args) {
     long lat = end_lat - lat_start;
     int extra_sleep = 0;
     if (cold) {
+        //If it's a cold start, sleep extra until the set cold start time
         if (lat < args->cold_lat * 1000.0) {
             extra_sleep = (args->cold_lat * 1000.0) - lat;
             lat = args->cold_lat * 1000.0;
         }
     }
 
+    //Write latency to file (for stats)
     saveLatency(args->stats, lat, type, freeRamLatency, findInDiskLatency, addToReadBufferLatency, memsetLatency);
 
     pthread_mutex_unlock(&args->ram->cache_lock);
@@ -159,6 +169,7 @@ void allocate_invocation(args_t *args) {
         usleep(extra_sleep * 1000);
     }
     usleep(args->invocation->duration * 1000);
+    //At the end of the function, add it to RAM cache
     insertRamItem(args->invocation, args->ram);
     free(args);
 }

@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include "option_reader.h"
 
+//Function to get the current millisecond
 long getMs(){
     struct timeval  tv;
     gettimeofday(&tv, NULL);
@@ -12,6 +13,7 @@ long getMs(){
     return (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000 ;
 }
 
+//Test and determine the disk bandwidth
 void test_speeds(options_t * options) {
 
     long write_start, write_end, read_start, read_end;
@@ -20,6 +22,7 @@ void test_speeds(options_t * options) {
 
     printf("Testing the disk speeds\n");
 
+    //Allocate 5 200MB files
     void * test_block1 = calloc(1, 200000000);
     memset(test_block1, 123, 200000000);
     void * test_block2 = calloc(1, 200000000);
@@ -31,6 +34,7 @@ void test_speeds(options_t * options) {
     void * test_block5 = calloc(1, 200000000);
     memset(test_block5, 123, 200000000);
 
+    //Write the 5 files to disk and measure time
     write_start = getMs();
     FILE * test_file1 = fopen(".test1", "w");
     fwrite(test_block1, 200000000, 1, test_file1);
@@ -43,6 +47,8 @@ void test_speeds(options_t * options) {
     FILE * test_file5 = fopen(".test5", "w");
     fwrite(test_block5, 200000000, 1, test_file5);
     write_end = getMs();
+
+    //Close the files and free the memory
     fclose(test_file1);
     fclose(test_file2);
     fclose(test_file3);
@@ -54,12 +60,14 @@ void test_speeds(options_t * options) {
     free(test_block4);
     free(test_block5);
 
-
+    //Allocate memory for reading
     test_block1 = calloc(1, 200000000);
     test_block2 = calloc(1, 200000000);
     test_block3 = calloc(1, 200000000);
     test_block4 = calloc(1, 200000000);
     test_block5 = calloc(1, 200000000);
+
+    //Open and read all the files and measure the time
     read_start = getMs();
     test_file1 = fopen(".test1", "r");
     fread(test_block1, 200000000, 1, test_file1);
@@ -72,6 +80,8 @@ void test_speeds(options_t * options) {
     test_file5 = fopen(".test5", "r");
     fread(test_block5, 200000000, 1, test_file5);
     read_end = getMs();
+
+    //Close the files, free the memory and delete the files
     fclose(test_file1);
     fclose(test_file2);
     fclose(test_file3);
@@ -82,19 +92,17 @@ void test_speeds(options_t * options) {
     free(test_block3);
     free(test_block4);
     free(test_block5);
-
     remove(".test1");
     remove(".test2");
     remove(".test3");
     remove(".test4");
     remove(".test5");
 
+    //Calculate the bandwidths
     write_duration = ((double)write_end - (double)write_start) * 0.001;
     read_duration = ((double)read_end - (double)read_start) * 0.001;
-
     write_speed = 1000.0 / write_duration;
     read_speed = 1000.0 / read_duration;
-    //read_speed = 489.1;
 
     printf("Write speed: %f MB/s\n", write_speed);
     printf("Read speed: %f MB/s\n", read_speed);
@@ -104,6 +112,7 @@ void test_speeds(options_t * options) {
 
 }
 
+//Read the parameters set by the user at run time
 void read_options(options_t *options, int n, char **params) {
     options->logging = 0;
     options->memory = 0;

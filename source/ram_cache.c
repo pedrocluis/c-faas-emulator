@@ -7,19 +7,23 @@
 #include "invocation.h"
 #include "disk_cache.h"
 
+//Try to find a function in the RAM cache
 void * searchRam(char *function, ram_t *ram) {
 
+    //Start at the head
     ram_node * temp = ram->head;
     ram_node * prev;
 
     invocation_t * ret;
 
+    //If the function is the head of the linked list, set new head
     if (temp != NULL && (strcmp(temp->invocation->hash_function, function) == 0)) {
         ret = ram->head->invocation;
         ram->head = temp->next;
         return ret;
     }
 
+    //Go through the linked list
     while (temp != NULL && (strcmp(temp->invocation->hash_function, function) != 0)) {
         prev = temp;
         temp = temp->next;
@@ -30,7 +34,7 @@ void * searchRam(char *function, ram_t *ram) {
         return NULL;
     }
 
-    // Remove the node
+    //The function was found and we remove it
     ret = temp->invocation;
     prev->next = temp->next;
     free(temp);
@@ -42,10 +46,12 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
     pthread_mutex_lock(&ram->cache_lock);
 
+    //Create new node
     ram_node * new_node = malloc(sizeof (ram_node));
     new_node->invocation = (invocation_t*)invocation;
     new_node->next = NULL;
 
+    //Go to the end of the list and add the new node
     ram_node * iter = ram->head;
     if (iter == NULL) {
         ram->head = new_node;
@@ -57,6 +63,7 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
         iter->next = new_node;
     }
 
+    //Update the occupied cache memory
     *(ram->cache_occupied) += invocation->memory;
 
     pthread_mutex_unlock(&ram->cache_lock);
@@ -65,6 +72,8 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 int freeRam(int mem_needed, ram_t * ram, int logging) {
     int freed = 0;
+
+    //Start at the head and remove nodes until we have sufficient memory
     while (ram->head != NULL && freed < mem_needed) {
         ram_node * iter = ram->head;
         freed += iter->invocation->memory;
@@ -81,9 +90,11 @@ int freeRam(int mem_needed, ram_t * ram, int logging) {
     }
 
     if (freed >= mem_needed) {
+        //We were able to free up sufficient memory
         return 1;
     }
     else {
+        //There is not enough memory
         return 0;
     }
 

@@ -9,15 +9,20 @@
 #include <string.h>
 #include "invocation.h"
 
+//Create file in disk and write the function data to it
 void createFile(disk_node * new_node, invocation_t * invocation, disk_t * disk) {
+
+    //Create string with file name
     char * cache_file = calloc(sizeof (char) * 80, 1);
     strncpy(cache_file, "cache/", strlen("cache/"));
     strcat(cache_file, new_node->function);
 
+    //Add file name to the node
     new_node->file = calloc(1, sizeof (char) * 80);
     strncpy(new_node->file, cache_file, strlen(cache_file));
     free(cache_file);
 
+    //Create and write file
     FILE * fileptr = fopen(new_node->file, "w");
     pthread_mutex_unlock(&disk->disk_lock);
     fwrite(invocation->occupied, invocation->memory * MEGA, 1, fileptr);
@@ -25,16 +30,20 @@ void createFile(disk_node * new_node, invocation_t * invocation, disk_t * disk) 
     fclose(fileptr);
 }
 
+//Function for when the read request is rejected
 void rejectRead(invocation_t * invocation) {
     pthread_mutex_lock(invocation->cond_lock);
+    //Set the flag to -1 and signal the waiting thread
     *(invocation->conc_n) = -1;
     pthread_cond_signal(invocation->cond);
     pthread_mutex_unlock(invocation->cond_lock);
 }
 
+//Search the disk for a function
 int findInDisk(char * name, disk_t * disk) {
     pthread_mutex_lock(&disk->disk_lock);
     int found = 0;
+    //Go through the linked list
     for(disk_node * node = disk->head; node != NULL; node = node->next) {
         if (strcmp(node->function, name) == 0) {
             found = 1;
@@ -45,15 +54,19 @@ int findInDisk(char * name, disk_t * disk) {
     return found;
 }
 
+//Get function from disk
 void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
     pthread_mutex_lock(&disk->disk_lock);
 
     disk_node * temp = disk->head;
 
+    //Special case for when the function is in the head of the list
     if (temp != NULL && (strcmp(temp->function, invocation->hash_function) == 0)) {
+        //Allocate the memory needed
         invocation->occupied = malloc(temp->memory * MEGA);
         FILE * fptr = fopen(temp->file, "r");
         pthread_mutex_unlock(&disk->disk_lock);
+        //Read from the file
         fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
         pthread_mutex_lock(&disk->disk_lock);
         fclose(fptr);
@@ -61,6 +74,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
         return;
     }
 
+    //Go through the list
     while (temp != NULL) {
         if (strcmp(temp->function, invocation->hash_function) != 0) {
             temp = temp->next;
@@ -75,7 +89,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
         return;
     }
 
-    // Remove the node
+    // Read the file
     invocation->occupied = malloc(temp->memory * MEGA);
     FILE * fptr = fopen(temp->file, "r");
     pthread_mutex_unlock(&disk->disk_lock);
@@ -87,23 +101,29 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
 
 void readFromDisk(disk_t *disk) {
     while(1) {
+        //Wait for a read request from another thread
         pthread_mutex_lock(&disk->read_buffer->read_lock);
         while (disk->read_buffer->buffer_size == 0) {
             pthread_cond_wait(&disk->read_buffer->cond_var, &disk->read_buffer->read_lock);
         }
 
+        //Extract first invocation
         invocation_t * inv = disk->read_buffer->buffer[0];
+
+        //Check if the emulation has ended
         if (strcmp(inv->hash_function, "quit") == 0) {
             pthread_mutex_unlock(&disk->read_buffer->read_lock);
             return;
         }
 
+        //Shift the queue one place and update the buffer size
         for(int n = 0; n < disk->read_buffer->buffer_size ; n++) {
             disk->read_buffer->buffer[n] = disk->read_buffer->buffer[n + 1];
         }
         disk->read_buffer->buffer_size -= 1;
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
 
+        //Read the function from disk
         retrieveFromDisk(inv, disk);
         pthread_mutex_lock(inv->cond_lock);
         if (inv->occupied == NULL) {
@@ -112,6 +132,10 @@ void readFromDisk(disk_t *disk) {
         else {
             *(inv->conc_n) = 1;
         }
+        //When its finished reading update the time to read
+        /*###################################################################################################
+         * TODO: CHECK IF A LOCK HERE CHANGES RESULTS (time_to_read could be corrupt)
+         ###################################################################################################*/
         disk->time_to_read -= (float)inv->memory / disk->read_speed;
         pthread_cond_signal(inv->cond);
         pthread_mutex_unlock(inv->cond_lock);
@@ -121,11 +145,13 @@ void readFromDisk(disk_t *disk) {
 void addToReadBuffer(invocation_t * invocation, disk_t * disk, float cold_lat) {
 
     pthread_mutex_lock(&disk->read_buffer->read_lock);
+    //Check if a lukewarm is beneficial
     if (disk->time_to_read + (float)invocation->memory / disk->read_speed >= 0.8 * cold_lat || disk->read_buffer->buffer_size >= 100) {
         rejectRead(invocation);
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
         return;
     }
+    //Update time to read and add invocation to buffer
     disk->time_to_read += (float)invocation->memory / disk->read_speed;
     disk->read_buffer->buffer[disk->read_buffer->buffer_size] = invocation;
     disk->read_buffer->buffer_size += 1;
@@ -139,6 +165,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
 
     invocation_t * invocation = (invocation_t*) invocation_p;
 
+    //Check if disk cache has space
     if (disk->memory < invocation->memory) {
         int freed = freeDisk(invocation->memory, disk);
         if (freed != 1) {
@@ -148,14 +175,17 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
         }
     }
 
+    //Create node
     disk_node * new_node = malloc(sizeof (disk_node));
     new_node->function = malloc(sizeof (char) * 65);
     strncpy(new_node->function, invocation->hash_function, strlen(invocation->hash_function));
     new_node->memory = invocation->memory;
     new_node->next = NULL;
 
+    //Create file and write function to disk
     createFile(new_node, invocation, disk);
 
+    //Add node to list
     disk_node * iter = disk->head;
     if (iter == NULL) {
         disk->head = new_node;
@@ -166,6 +196,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
         }
         iter->next = new_node;
     }
+    //Update disk memory
     disk->memory -= (int)new_node->memory;
     pthread_mutex_unlock(&disk->disk_lock);
 }
@@ -178,17 +209,21 @@ void writeToDisk(check_ram_args * args) {
     int buffer_size = 0;
 
     while (1) {
+        //Check every 100 milliseconds
         usleep(1000 * 100);
 
+        //Check if emulation has ended
         pthread_mutex_lock(&ram->cache_lock);
         if (*(ram->cache_occupied) == -1) {
             pthread_mutex_unlock(&ram->cache_lock);
             break;
         }
 
+        //Check if the threshold has been reached
         if ((float)*(ram->cache_occupied) / (float)args->max_memory > disk->threshold) {
             buffer_size = 0;
-            while (ram->head != NULL && (float)*(ram->cache_occupied) / (float)args->max_memory > disk->threshold) {
+            //Move RAM cache items to write buffer until we're below the threshold
+            while (ram->head != NULL && (float)*(ram->cache_occupied) / (float)args->max_memory > disk->threshold && buffer_size < 100) {
                 ram_node * iter = ram->head;
                 buffer[buffer_size] = iter->invocation;
                 *(ram->cache_occupied) -= buffer[buffer_size]->memory;
@@ -202,13 +237,14 @@ void writeToDisk(check_ram_args * args) {
         if (buffer_size != 0) {
             int i = 0;
             while (i < buffer_size) {
-
+                //If the function is already in disk we discard this RAM item
                 if (findInDisk(buffer[i]->hash_function, disk) == 0) {
                     insertDiskItem(buffer[i], disk);
                     if (args->logging == 1) {
                         printf("Stored %d MB in disk\n", buffer[i]->memory);
                     }
                 }
+                //Free the memory in RAM
                 free(buffer[i]->occupied);
                 free(buffer[i]->hash_function);
                 pthread_mutex_lock(&ram->cache_lock);
@@ -228,6 +264,7 @@ void writeToDisk(check_ram_args * args) {
 int freeDisk(int memory, disk_t *disk) {
     disk_node * temp;
     int freed = 0;
+    //Start deleting items from the head until we have no more items, or we have freed enough memory
     while (disk->head != NULL && freed < memory) {
         temp = disk->head;
         disk->head = disk->head->next;

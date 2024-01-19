@@ -10,10 +10,14 @@
 #include "C-Thread-Pool-master/thpool.h"
 #include "stats.h"
 
+
+
+//Closes and destroys the threadpools
 void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, ram_t * ram) {
     thpool_wait(master);
     thpool_destroy(master);
 
+    //Sends signal to the thread that the emulation is finished
     invocation_t quit;
     quit.hash_function = "quit";
     quit.memory = 0;
@@ -37,6 +41,7 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
 
 void main_loop(options_t *options) {
 
+    //Counter to generate stats
     int warm_starts = 0;
     int lukewarm_starts = 0;
     int cold_starts = 0;
@@ -58,6 +63,7 @@ void main_loop(options_t *options) {
     threadpool write_pool = thpool_init(1);
     threadpool read_pool = thpool_init(1);
 
+    //Create args to pass to the always running write to disk thread
     check_ram_args * cr_args = malloc(sizeof (check_ram_args));
     cr_args->disk = disk;
     cr_args->ram = ram;
@@ -89,9 +95,13 @@ void main_loop(options_t *options) {
     //Start the time
     long start = getMs();
 
+    //Go through each line of the input
     while (fgets(line, sizeof(line), fp) != NULL) {
 
+        //Start latency counter
         long curr = getMs();
+
+        //Every minute save the amount of lukewarm, cold and warm starts
         if (curr >= stats->lastMs + 1000*60) {
             saveStarts(stats, curr);
         }
@@ -102,11 +112,12 @@ void main_loop(options_t *options) {
             continue;
         }
 
+        //Convert the line to an invocation struct
         invocation_t *invocation = malloc(sizeof (invocation_t));
         line_to_invocation(invocation, line);
+
         //Wait for invocation time
         long time_passed = getMs() - start;
-
         if (time_passed < invocation->timestamp) {
             long time_to_wait = invocation->timestamp - time_passed;
             usleep(time_to_wait * 1000);
@@ -118,6 +129,7 @@ void main_loop(options_t *options) {
             printf("%lu\n", count);
         }
 
+        //Allocate and set the args for the thread that's going to allocate the invocation
         args_t *args = malloc(sizeof(args_t));
         args->invocation = invocation;
         args->ram = ram;
@@ -129,17 +141,21 @@ void main_loop(options_t *options) {
         args->cold_lat = options->cold_latency;
         args->stats = stats;
 
+        //Add invocation to the thread pool
         thpool_add_work(pool, (void *) allocate_invocation, args);
 
     }
+    //Close the file
     fclose(fp);
 
+    // Close the pools and files and delete disk cache
     endPools(disk, pool, write_pool, read_pool, ram);
     freeDisk(options->disk * 1000, disk);
     closeFiles(stats);
     free(stats);
     free(cr_args);
 
+    //Print totals
     printf("Total invocations: %ld\n", count);
     printf("Warm starts: %d\n", warm_starts);
     printf("Lukewarm starts: %d\n", lukewarm_starts);
