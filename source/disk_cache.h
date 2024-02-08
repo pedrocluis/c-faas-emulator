@@ -9,9 +9,6 @@
 #include "invocation.h"
 #include "ram_cache.h"
 
-#define THRESHOLD 0.7
-//#define COLD 0.250
-
 typedef struct read_buffer_t {
     invocation_t *buffer[100];
     int buffer_size;

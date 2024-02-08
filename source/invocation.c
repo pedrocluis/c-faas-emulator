@@ -141,7 +141,7 @@ void allocate_invocation(args_t *args) {
             s = getMs();
             //Allocate memory and set it to occupy function memory
             args->invocation->occupied = malloc(args->invocation->memory * MEGA);
-            memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
+            //memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
             memsetLatency = getMs() - s;
             pthread_mutex_lock(&args->ram->cache_lock);
             if (args->logging) {

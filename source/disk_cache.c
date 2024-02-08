@@ -132,11 +132,9 @@ void readFromDisk(disk_t *disk) {
         else {
             *(inv->conc_n) = 1;
         }
-        //When its finished reading update the time to read
-        /*###################################################################################################
-         * TODO: CHECK IF A LOCK HERE CHANGES RESULTS (time_to_read could be corrupt)
-         ###################################################################################################*/
+        pthread_mutex_lock(&disk->read_buffer->read_lock);
         disk->time_to_read -= (float)inv->memory / disk->read_speed;
+        pthread_mutex_unlock(&disk->read_buffer->read_lock);
         pthread_cond_signal(inv->cond);
         pthread_mutex_unlock(inv->cond_lock);
     }
