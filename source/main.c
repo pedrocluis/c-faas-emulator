@@ -9,8 +9,7 @@
 #include <errno.h>
 #include "C-Thread-Pool-master/thpool.h"
 #include "stats.h"
-
-
+#include "containers.h"
 
 //Closes and destroys the threadpools
 void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, ram_t * ram) {
@@ -41,6 +40,11 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
 
 void main_loop(options_t *options) {
 
+    CONTAINERS *containers = NULL;
+    if (options->podman) {
+        containers = initPodman(options->threads);
+    }
+
     //Counter to generate stats
     int warm_starts = 0;
     int lukewarm_starts = 0;
@@ -57,6 +61,7 @@ void main_loop(options_t *options) {
     //Start disk cache
     disk_t *disk = malloc(sizeof(disk_t));
     initDisk(disk, options);
+    disk->containers = containers;
 
     //Start thread-pools
     threadpool pool = thpool_init(options->threads);
@@ -140,6 +145,8 @@ void main_loop(options_t *options) {
         args->coldStarts = &cold_starts;
         args->cold_lat = options->cold_latency;
         args->stats = stats;
+        args->containers = containers;
+        args->n_threads = options->threads;
 
         //Add invocation to the thread pool
         thpool_add_work(pool, (void *) allocate_invocation, args);
@@ -154,6 +161,10 @@ void main_loop(options_t *options) {
     closeFiles(stats);
     free(stats);
     free(cr_args);
+
+    if (options->podman) {
+        destroyPodman(containers, options->threads);
+    }
 
     //Print totals
     printf("Total invocations: %ld\n", count);

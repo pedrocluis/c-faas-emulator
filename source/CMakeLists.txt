@@ -17,7 +17,14 @@ add_executable(simulator main.c
         disk_cache.c
         stats.h
         stats.c
+        containers.h
+        containers.c
+        types.h
 )
 
+find_package(CURL REQUIRED)
+target_link_libraries(simulator PRIVATE CURL::libcurl )
 find_package(Threads REQUIRED)
 target_link_libraries(simulator PRIVATE Threads::Threads)
+find_package(json-c CONFIG)
+target_link_libraries(simulator PRIVATE json-c::json-c)

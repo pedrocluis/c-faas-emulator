@@ -7,7 +7,12 @@
 #include <string.h>
 #include "ram_cache.h"
 #include "invocation.h"
+#include "containers.h"
+#include "option_reader.h"
 #include "disk_cache.h"
+#include "stats.h"
+#include <sys/types.h>
+#include <sys/syscall.h>
 
 void line_to_invocation(invocation_t * invocation, char* line) {
     char *pt;
@@ -39,6 +44,27 @@ void line_to_invocation(invocation_t * invocation, char* line) {
     invocation->occupied = NULL;
 }
 
+int getTid(CONTAINERS* containers, int n_threads) {
+    pid_t x = syscall(__NR_gettid);
+
+    for (int i = 0; i < n_threads; i++) {
+        if (containers->thread_ids[i * sizeof (pid_t)] == x) {
+            return i;
+        }
+    }
+
+    pthread_mutex_lock(&containers->ports_lock);
+    for (int i = 0; i < n_threads; i++) {
+        if (containers->thread_ids[i * sizeof (pid_t)] == 0) {
+            containers->thread_ids[i * sizeof (pid_t)] = x;
+            pthread_mutex_unlock(&containers->ports_lock);
+            return i;
+        }
+    }
+    pthread_mutex_unlock(&containers->ports_lock);
+    return -1;
+}
+
 void allocate_invocation(args_t *args) {
 
     long lat_start = getMs();
@@ -51,6 +77,8 @@ void allocate_invocation(args_t *args) {
     long memsetLatency = 0;
     long s;
 
+    int tid = getTid(args->containers, args->n_threads);
+
     pthread_mutex_lock(&args->ram->cache_lock);
     //First check if the function is in RAM
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
@@ -60,6 +88,9 @@ void allocate_invocation(args_t *args) {
         pthread_mutex_lock(&args->stats->lock_starts);
         args->stats->warm += 1;
         pthread_mutex_unlock(&args->stats->lock_starts);
+
+        args->invocation->container_id = inRam->container_id;
+        args->invocation->container_port = inRam->container_port;
 
         args->invocation->occupied = inRam->occupied;
         free(inRam->hash_function);
@@ -75,7 +106,15 @@ void allocate_invocation(args_t *args) {
             int mem_needed = args->invocation->memory - args->ram->memory;
 
             s = getMs();
-            int freed = freeRam(mem_needed, args->ram, args->logging);
+            int freed;
+
+            if (args->containers != NULL) {
+                int handle_n = getTid(args->containers, args->n_threads);
+                freed = freeRam(mem_needed, args->ram, args->logging, args->containers);
+            } else {
+                freed = freeRam(mem_needed, args->ram, args->logging, NULL);
+            }
+
             freeRamLatency = getMs() - s;
 
             if (freed == 0) {
@@ -87,10 +126,10 @@ void allocate_invocation(args_t *args) {
                 return;
             }
         }
-
         //Update RAM memory
         args->ram->memory -= args->invocation->memory;
         pthread_mutex_unlock(&args->ram->cache_lock);
+
         int foundInDisk;
         s = getMs();
         foundInDisk = findInDisk(args->invocation->hash_function, args->disk);
@@ -139,21 +178,35 @@ void allocate_invocation(args_t *args) {
             *(args->coldStarts)+=1;
             pthread_mutex_unlock(&args->ram->cache_lock);
             s = getMs();
-            //Allocate memory and set it to occupy function memory
-            args->invocation->occupied = malloc(args->invocation->memory * MEGA);
-            //memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
-            memsetLatency = getMs() - s;
-            pthread_mutex_lock(&args->ram->cache_lock);
-            if (args->logging) {
-                printf("Allocated %d MB\n", args->invocation->memory);
+
+
+
+            if (args->containers != NULL) {
+                //Run container and initialize function
+                char *c_id = createContainer(args->containers, args->invocation);
+                startContainer(c_id);
+                initFunction(args->invocation->container_port, args->containers, tid);
+                pthread_mutex_lock(&args->ram->cache_lock);
             }
+
+            else {
+                //Allocate memory and set it to occupy function memory
+                args->invocation->occupied = malloc(args->invocation->memory * MEGA);
+                //memset(args->invocation->occupied, 123, args->invocation->memory * MEGA);
+                memsetLatency = getMs() - s;
+                pthread_mutex_lock(&args->ram->cache_lock);
+                if (args->logging) {
+                    printf("Allocated %d MB\n", args->invocation->memory);
+                }
+            }
+
         }
     }
 
     long end_lat = getMs();
     long lat = end_lat - lat_start;
     int extra_sleep = 0;
-    if (cold) {
+    if (cold && args->containers == NULL) {
         //If it's a cold start, sleep extra until the set cold start time
         if (lat < args->cold_lat * 1000.0) {
             extra_sleep = (args->cold_lat * 1000.0) - lat;
@@ -163,12 +216,17 @@ void allocate_invocation(args_t *args) {
 
     //Write latency to file (for stats)
     saveLatency(args->stats, lat, type, freeRamLatency, findInDiskLatency, addToReadBufferLatency, memsetLatency);
-
     pthread_mutex_unlock(&args->ram->cache_lock);
-    if (extra_sleep) {
-        usleep(extra_sleep * 1000);
+
+    if (args->containers != NULL) {
+        runFunction(args->invocation->container_port, args->invocation->memory, args->invocation->duration, tid, args->containers);
     }
-    usleep(args->invocation->duration * 1000);
+    else {
+        if (extra_sleep) {
+            usleep(extra_sleep * 1000);
+        }
+        usleep(args->invocation->duration * 1000);
+    }
     //At the end of the function, add it to RAM cache
     insertRamItem(args->invocation, args->ram);
     free(args);

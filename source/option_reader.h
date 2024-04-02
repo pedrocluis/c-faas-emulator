@@ -9,19 +9,7 @@
 #include <sys/time.h>
 #include <stdlib.h>
 #include <stdio.h>
-
-typedef struct {
-    char *input_file;
-    int logging;
-    int memory;
-    int disk;
-    int threads;
-    int nodisk;
-    float write_speed;
-    float read_speed;
-    int threshold;
-    float cold_latency;
-} options_t;
+#include "types.h"
 
 long getMs();
 

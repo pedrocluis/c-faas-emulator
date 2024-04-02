@@ -107,6 +107,10 @@ void test_speeds(options_t * options) {
     printf("Write speed: %f MB/s\n", write_speed);
     printf("Read speed: %f MB/s\n", read_speed);
 
+
+    //TEMP
+    //options->write_speed = write_speed;
+    //options->read_speed = read_speed;
     options->write_speed = write_speed;
     options->read_speed = read_speed;
 
@@ -117,6 +121,7 @@ void read_options(options_t *options, int n, char **params) {
     options->logging = 0;
     options->memory = 0;
     options->nodisk = 0;
+    options->podman = 0;
 
     for( int i = 1; i < n; i+=1 ) {
         if( strcmp( params[i], "-input" ) == 0 ) {
@@ -144,7 +149,9 @@ void read_options(options_t *options, int n, char **params) {
         if (strcmp(params[i], "-cold") == 0) {
             options->cold_latency = 0.001 * (float)(atoi(params[i + 1]));
         }
+        if (strcmp(params[i], "-podman") == 0) {
+            options->podman = 1;
+        }
     }
-
     test_speeds(options);
 }

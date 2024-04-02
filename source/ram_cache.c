@@ -4,11 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "ram_cache.h"
-#include "invocation.h"
-#include "disk_cache.h"
 
 //Try to find a function in the RAM cache
-void * searchRam(char *function, ram_t *ram) {
+invocation_t * searchRam(char *function, ram_t *ram) {
 
     //Start at the head
     ram_node * temp = ram->head;
@@ -70,7 +68,7 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
-int freeRam(int mem_needed, ram_t * ram, int logging) {
+int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers) {
     int freed = 0;
 
     //Start at the head and remove nodes until we have sufficient memory
@@ -78,8 +76,15 @@ int freeRam(int mem_needed, ram_t * ram, int logging) {
         ram_node * iter = ram->head;
         freed += iter->invocation->memory;
         ram->head = ram->head->next;
+
+        if (containers != NULL) {
+            //stopContainer(docker, iter->invocation->container_id);
+            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port);
+        } else {
+            free(iter->invocation->occupied);
+        }
+
         free(iter->invocation->hash_function);
-        free(iter->invocation->occupied);
         ram->memory += iter->invocation->memory;
         *(ram->cache_occupied) -= iter->invocation->memory;
         if (logging) {
