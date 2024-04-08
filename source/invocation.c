@@ -48,15 +48,15 @@ int getTid(CONTAINERS* containers, int n_threads) {
     pid_t x = syscall(__NR_gettid);
 
     for (int i = 0; i < n_threads; i++) {
-        if (containers->thread_ids[i * sizeof (pid_t)] == x) {
+        if (containers->thread_ids[i] == x) {
             return i;
         }
     }
 
     pthread_mutex_lock(&containers->ports_lock);
     for (int i = 0; i < n_threads; i++) {
-        if (containers->thread_ids[i * sizeof (pid_t)] == 0) {
-            containers->thread_ids[i * sizeof (pid_t)] = x;
+        if (containers->thread_ids[i] == 0) {
+            containers->thread_ids[i] = x;
             pthread_mutex_unlock(&containers->ports_lock);
             return i;
         }
@@ -183,7 +183,7 @@ void allocate_invocation(args_t *args) {
 
             if (args->containers != NULL) {
                 //Run container and initialize function
-                char *c_id = createContainer(args->containers, args->invocation);
+                char *c_id = createContainer(args->containers, args->invocation, tid);
                 startContainer(c_id);
                 initFunction(args->invocation->container_port, args->containers, tid);
                 pthread_mutex_lock(&args->ram->cache_lock);

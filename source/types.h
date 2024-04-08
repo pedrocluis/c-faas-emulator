@@ -8,7 +8,7 @@
 #include <curl/curl.h>
 #include "C-Thread-Pool-master/thpool.h"
 
-#define MAX_CONTAINERS 20
+#define MAX_CONTAINERS 3
 
 typedef struct CONTAINERS{
     int ports[500];
@@ -17,6 +17,7 @@ typedef struct CONTAINERS{
 
     pid_t *thread_ids;
     CURL **curl_handles;
+    CURL **api_handles;
 
 } CONTAINERS;
 

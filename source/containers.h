@@ -14,7 +14,7 @@ int getPort(CONTAINERS *containers);
 
 void destroyPodman(CONTAINERS * containers, int n_threads);
 
-char* createContainer(CONTAINERS *containers, invocation_t * invocation);
+char* createContainer(CONTAINERS *containers, invocation_t * invocation, int tid);
 
 void startContainer(char * id);
 
