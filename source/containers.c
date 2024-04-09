@@ -7,10 +7,35 @@
 #include <string.h>
 #include "containers.h"
 
-// Callback function to write response data from libcurl
-size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data) {
-    strcat(data, ptr);
-    return size * nmemb;
+
+struct string {
+    char *ptr;
+    size_t len;
+};
+
+void init_string(struct string *s) {
+    s->len = 0;
+    s->ptr = malloc(s->len+1);
+    if (s->ptr == NULL) {
+        fprintf(stderr, "malloc() failed\n");
+        exit(EXIT_FAILURE);
+    }
+    s->ptr[0] = '\0';
+}
+
+size_t writefunc(void *ptr, size_t size, size_t nmemb, struct string *s)
+{
+    size_t new_len = s->len + size*nmemb;
+    s->ptr = realloc(s->ptr, new_len+1);
+    if (s->ptr == NULL) {
+        fprintf(stderr, "realloc() failed\n");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(s->ptr+s->len, ptr, size*nmemb);
+    s->ptr[new_len] = '\0';
+    s->len = new_len;
+
+    return size*nmemb;
 }
 
 char *readInitFile(char *file) {
@@ -51,6 +76,12 @@ CONTAINERS * initPodman(int n_threads) {
         containers->curl_handles[i] = curl_easy_init();
         containers->api_handles[i] = curl_easy_init();
     }
+
+    containers->checkpoint_handle = curl_easy_init();
+    containers->restore_handle = curl_easy_init();
+
+    containers->n_threads = n_threads;
+
     return containers;
 }
 
@@ -63,6 +94,8 @@ void destroyPodman(CONTAINERS *containers, int n_threads) {
         curl_easy_cleanup(containers->curl_handles[i]);
         curl_easy_cleanup(containers->api_handles[i]);
     }
+    curl_easy_cleanup(containers->checkpoint_handle);
+    curl_easy_cleanup(containers->restore_handle);
     free(containers->curl_handles);
     free(containers->thread_ids);
     free(containers->initFile);
@@ -91,19 +124,10 @@ void freePort(CONTAINERS *containers, int port) {
     pthread_mutex_unlock(&containers->ports_lock);
 }
 
-char* createContainer(CONTAINERS *containers, invocation_t *invocation, int tid) {
-
-    CURL* handle = containers->api_handles[tid];
-    CURLcode res;
-    char *containerId = malloc(sizeof (char) * 100);
-    memset(containerId, 0, 100);
-    //Find free port
-    int port = getPort(containers);
-
-    char *response_buffer = malloc(4096); // Adjust buffer size as needed
-    response_buffer[0] = '\0';
-
+char* createContainerJson(int port, int size) {
     //Create main object
+    char * json_str = malloc(sizeof (char) * size);
+    memset(json_str, 0, 200);
     json_object *json = json_object_new_object();
     json_object_object_add(json, "image", json_object_new_string("docker.io/openwhisk/action-python-v3.9"));
     json_object_object_add(json, "privileged", json_object_new_boolean(1));
@@ -113,38 +137,76 @@ char* createContainer(CONTAINERS *containers, invocation_t *invocation, int tid)
     json_object_object_add(portmappings, "host_port", json_object_new_int(port));
     json_object_array_add(portarray, portmappings);
     json_object_object_add(json, "portmappings", portarray);
+    strcpy(json_str, json_object_to_json_string(json));
+    return json_str;
+}
+
+char* createContainer(CONTAINERS *containers, invocation_t *invocation, int tid) {
+
+    CURL* handle = containers->api_handles[tid];
+    CURLcode res;
+    char *containerId = malloc(sizeof (char) * 100);
+    memset(containerId, 0, 100);
+    //Find free port
+    int port = getPort(containers);
+    struct string s;
+    init_string(&s);
+
+    char *json_string = createContainerJson(port, 200);
 
     curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
-    curl_easy_setopt(handle, CURLOPT_URL, "http://d/v4.0.0/libpod/containers/create");
-    curl_easy_setopt(handle, CURLOPT_HEADER, "Content-Type: application/json");
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
+    curl_easy_setopt(handle, CURLOPT_URL, "http://d/v3.0.0/libpod/containers/create");
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, json_string);
     curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
-    // Set callback function to receive response
-    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(handle, CURLOPT_WRITEDATA, response_buffer);
+    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writefunc);
+    curl_easy_setopt(handle, CURLOPT_WRITEDATA, &s);
     res = curl_easy_perform(handle);
 
     //Wait for container to properly start
-    while (res != CURLE_OK) {
+    if (res != CURLE_OK) {
         printf("%s\n", curl_easy_strerror(res));
-        usleep(10000);
-        res = curl_easy_perform(handle);
+        exit(1);
     }
-
-    printf("%s\n", response_buffer);
-    free(json);
-    invocation->container_id = containerId;
+    json_object *jobj;
+    jobj = json_tokener_parse(s.ptr);
+    json_object *obj_Id = json_object_object_get(jobj, "Id");
+    invocation->container_id = malloc(sizeof (char) * 65);
+    strcpy(invocation->container_id, json_object_get_string(obj_Id));
+    invocation->container_id[64] = '\0';
     invocation->container_port = port;
-    return containerId;
+    free(json_string);
+    free(s.ptr);
+    curl_easy_reset(handle);
+    return invocation->container_id;
 }
 
-void startContainer(char * id) {
+void startContainer(CONTAINERS *containers, char * id, int tid) {
 
-    char* cmd = malloc(sizeof (char) * 200);
-    memset(cmd, 0, 200);
-    sprintf(cmd, "podman start %s", id);
-    system(cmd);
-    free(cmd);
+    char *url = malloc(sizeof (char) * 120);
+    memset(url, 0, 120);
+    sprintf(url, "http://d/v3.0.0/libpod/containers/%s/start", id);
+
+    CURL* handle = containers->api_handles[tid];
+    CURLcode res;
+    curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
+    curl_easy_setopt(handle, CURLOPT_URL, url);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
+    res = curl_easy_perform(handle);
+
+    if (res != CURLE_OK) {
+        printf("%s\n", curl_easy_strerror(res));
+        exit(1);
+    }
+
+    curl_easy_reset(handle);
+
 }
 
 void initFunction(int port, CONTAINERS *containers, int tid) {
@@ -170,6 +232,7 @@ void initFunction(int port, CONTAINERS *containers, int tid) {
         }
 
         free(url);
+        curl_easy_reset(curl);
         return;
     }
 
@@ -209,6 +272,7 @@ void runFunction(int port, int memory, int duration, int tid, CONTAINERS *contai
             usleep(10000);
             res = curl_easy_perform(curl);
         }
+        curl_easy_reset(curl);
         free(url);
         return;
     }
@@ -217,30 +281,74 @@ void runFunction(int port, int memory, int duration, int tid, CONTAINERS *contai
     exit(1);
 }
 
-void removeContainer(CONTAINERS *containers, char *id, int port) {
+void removeContainer(CONTAINERS *containers, char *id, int port, CURL* curl) {
 
-    char* cmd = malloc(sizeof (char) * 200);
-    memset(cmd, 0, 200);
-    sprintf(cmd, "podman rm -f %s", id);
-    system(cmd);
+    CURLcode res;
+    char *url = malloc(sizeof (char) * 120);
+    memset(url, 0, 120);
+    sprintf(url, "http://d/v3.0.0/libpod/containers/%s?force=true", id);
+
+    curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, NULL);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "content-type: application/json");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        printf("%s\n", curl_easy_strerror(res));
+        exit(1);
+    }
+    curl_easy_reset(curl);
     freePort(containers, port);
-    free(cmd);
 }
 
-void checkpointContainer(char *id) {
+void checkpointContainer(CURL *handle, char *id) {
 
-    char* cmd = malloc(sizeof (char) * 200);
-    memset(cmd, 0, 200);
-    sprintf(cmd, "podman container checkpoint --tcp-established %s", id);
-    system(cmd);
-    free(cmd);
+    char *url = malloc(sizeof (char) * 200);
+    memset(url, 0, 200);
+    sprintf(url, "http://d/v3.0.0/libpod/containers/%s/checkpoint?tcpEstablished=true", id);
+
+    CURLcode res;
+    curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
+    curl_easy_setopt(handle, CURLOPT_URL, url);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
+    res = curl_easy_perform(handle);
+
+    free(url);
+
+    if (res != CURLE_OK) {
+        printf("%s\n", curl_easy_strerror(res));
+        exit(1);
+    }
+    curl_easy_reset(handle);
 }
 
-void restoreCheckpoint(char *id) {
+void restoreCheckpoint(CURL* handle, char *id) {
 
-    char* cmd = malloc(sizeof (char) * 200);
-    memset(cmd, 0, 200);
-    sprintf(cmd, "podman container restore --tcp-established %s", id);
-    system(cmd);
-    free(cmd);
+    char *url = malloc(sizeof (char) * 200);
+    memset(url, 0, 200);
+    sprintf(url, "http://d/v3.0.0/libpod/containers/%s/restore?tcpEstablished=true", id);
+
+    CURLcode res;
+    curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
+    curl_easy_setopt(handle, CURLOPT_URL, url);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
+    res = curl_easy_perform(handle);
+
+    if (res != CURLE_OK) {
+        printf("%s\n", curl_easy_strerror(res));
+        exit(1);
+    }
+    curl_easy_reset(handle);
 }

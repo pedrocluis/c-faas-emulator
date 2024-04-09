@@ -44,17 +44,17 @@ void line_to_invocation(invocation_t * invocation, char* line) {
     invocation->occupied = NULL;
 }
 
-int getTid(CONTAINERS* containers, int n_threads) {
+int getTid(CONTAINERS* containers) {
     pid_t x = syscall(__NR_gettid);
 
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < containers->n_threads; i++) {
         if (containers->thread_ids[i] == x) {
             return i;
         }
     }
 
     pthread_mutex_lock(&containers->ports_lock);
-    for (int i = 0; i < n_threads; i++) {
+    for (int i = 0; i < containers->n_threads; i++) {
         if (containers->thread_ids[i] == 0) {
             containers->thread_ids[i] = x;
             pthread_mutex_unlock(&containers->ports_lock);
@@ -77,7 +77,7 @@ void allocate_invocation(args_t *args) {
     long memsetLatency = 0;
     long s;
 
-    int tid = getTid(args->containers, args->n_threads);
+    int tid = getTid(args->containers);
 
     pthread_mutex_lock(&args->ram->cache_lock);
     //First check if the function is in RAM
@@ -109,7 +109,6 @@ void allocate_invocation(args_t *args) {
             int freed;
 
             if (args->containers != NULL) {
-                int handle_n = getTid(args->containers, args->n_threads);
                 freed = freeRam(mem_needed, args->ram, args->logging, args->containers);
             } else {
                 freed = freeRam(mem_needed, args->ram, args->logging, NULL);
@@ -184,7 +183,7 @@ void allocate_invocation(args_t *args) {
             if (args->containers != NULL) {
                 //Run container and initialize function
                 char *c_id = createContainer(args->containers, args->invocation, tid);
-                startContainer(c_id);
+                startContainer(args->containers, c_id, tid);
                 initFunction(args->invocation->container_port, args->containers, tid);
                 pthread_mutex_lock(&args->ram->cache_lock);
             }

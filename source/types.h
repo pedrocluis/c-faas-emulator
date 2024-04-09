@@ -19,6 +19,11 @@ typedef struct CONTAINERS{
     CURL **curl_handles;
     CURL **api_handles;
 
+    CURL *checkpoint_handle;
+    CURL *restore_handle;
+
+    int n_threads;
+
 } CONTAINERS;
 
 typedef struct stats_t {

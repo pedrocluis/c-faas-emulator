@@ -77,7 +77,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                     free(temp->containers[i]);
                     temp->containers[i] = NULL;
                     pthread_mutex_unlock(&disk->disk_lock);
-                    restoreCheckpoint(invocation->container_id);
+                    restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
                     return;
                 }
                 i++;
@@ -125,7 +125,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                 free(temp->containers[i]);
                 temp->containers[i] = NULL;
                 pthread_mutex_unlock(&disk->disk_lock);
-                restoreCheckpoint(invocation->container_id);
+                restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
                 return;
             }
             i++;
@@ -253,7 +253,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
                 i++;
             }
             if (i == MAX_CONTAINERS) {
-                removeContainer(disk->containers, invocation->container_id, invocation->container_port);
+                removeContainer(disk->containers, invocation->container_id, invocation->container_port, disk->containers->checkpoint_handle);
                 pthread_mutex_unlock(&disk->disk_lock);
                 return;
             }
@@ -264,7 +264,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
             iter->containers[i]->c_id = invocation->container_id;
             disk->memory -= invocation->memory;
             pthread_mutex_unlock(&disk->disk_lock);
-            checkpointContainer(invocation->container_id);
+            checkpointContainer(disk->containers->checkpoint_handle, invocation->container_id);
             return;
         }
     }
@@ -283,7 +283,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
         new_node->containers[0]->c_port = invocation->container_port;
         new_node->containers[0]->c_id = invocation->container_id;
         pthread_mutex_unlock(&disk->disk_lock);
-        checkpointContainer(invocation->container_id);
+        checkpointContainer(disk->containers->checkpoint_handle, invocation->container_id);
         pthread_mutex_lock(&disk->disk_lock);
     }
 
@@ -393,7 +393,7 @@ int freeDisk(int memory, disk_t *disk) {
                 }
                 disk->memory += (int)temp->memory;
                 freed += (int)temp->memory;
-                removeContainer(disk->containers, temp->containers[i]->c_id, temp->containers[i]->c_port);
+                removeContainer(disk->containers, temp->containers[i]->c_id, temp->containers[i]->c_port, disk->containers->checkpoint_handle);
             }
             free(temp->function);
             free(temp);

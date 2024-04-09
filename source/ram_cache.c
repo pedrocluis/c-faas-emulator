@@ -78,8 +78,8 @@ int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers) {
         ram->head = ram->head->next;
 
         if (containers != NULL) {
-            //stopContainer(docker, iter->invocation->container_id);
-            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port);
+            int tid = getTid(containers);
+            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port, containers->api_handles[tid]);
         } else {
             free(iter->invocation->occupied);
         }
