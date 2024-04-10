@@ -154,4 +154,6 @@ void read_options(options_t *options, int n, char **params) {
         }
     }
     test_speeds(options);
+    //options->read_speed = 2000;
+    //options->write_speed = 2000;
 }

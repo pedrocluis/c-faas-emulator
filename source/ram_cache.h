@@ -13,7 +13,7 @@ invocation_t * searchRam(char *function, ram_t *ram);
 
 void insertRamItem(invocation_t * invocation, ram_t *ram);
 
-int freeRam(int memory, ram_t *ram, int logging, CONTAINERS *containers);
+int freeRam(int memory, ram_t *ram, int logging, CONTAINERS *containers, pthread_mutex_t * lock);
 
 
 #endif //SIMULATOR_RAM_CACHE_H

@@ -109,9 +109,9 @@ void allocate_invocation(args_t *args) {
             int freed;
 
             if (args->containers != NULL) {
-                freed = freeRam(mem_needed, args->ram, args->logging, args->containers);
+                freed = freeRam(mem_needed, args->ram, args->logging, args->containers, &args->ram->cache_lock);
             } else {
-                freed = freeRam(mem_needed, args->ram, args->logging, NULL);
+                freed = freeRam(mem_needed, args->ram, args->logging, NULL, NULL);
             }
 
             freeRamLatency = getMs() - s;

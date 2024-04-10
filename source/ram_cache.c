@@ -68,8 +68,43 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
-int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers) {
+int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pthread_mutex_t* lock) {
     int freed = 0;
+    int tid = getTid(containers);
+
+    if (containers != NULL) {
+        ram_node * to_remove = ram->head;
+        ram_node * last_to_remove = NULL;
+        while (ram->head != NULL && freed < mem_needed) {
+            freed += ram->head->invocation->memory;
+            last_to_remove = ram->head;
+            ram->head = ram->head->next;
+        }
+        if (last_to_remove != NULL) {
+            last_to_remove->next = NULL;
+        }
+        pthread_mutex_unlock(lock);
+        while (to_remove != NULL) {
+            ram_node * iter = to_remove;
+            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port, containers->api_handles[tid]);
+            to_remove = to_remove->next;
+            free(iter->invocation->hash_function);
+            free(iter->invocation);
+            free(iter);
+        }
+        pthread_mutex_lock(lock);
+        ram->memory += freed;
+        *(ram->cache_occupied) -= freed;
+        if (freed >= mem_needed) {
+            //We were able to free up sufficient memory
+            return 1;
+        }
+        else {
+            //There is not enough memory
+            return 0;
+        }
+    }
+
 
     //Start at the head and remove nodes until we have sufficient memory
     while (ram->head != NULL && freed < mem_needed) {
@@ -77,12 +112,7 @@ int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers) {
         freed += iter->invocation->memory;
         ram->head = ram->head->next;
 
-        if (containers != NULL) {
-            int tid = getTid(containers);
-            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port, containers->api_handles[tid]);
-        } else {
-            free(iter->invocation->occupied);
-        }
+        free(iter->invocation->occupied);
 
         free(iter->invocation->hash_function);
         ram->memory += iter->invocation->memory;

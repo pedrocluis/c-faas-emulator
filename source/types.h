@@ -21,8 +21,10 @@ typedef struct CONTAINERS{
 
     CURL *checkpoint_handle;
     CURL *restore_handle;
-
     int n_threads;
+
+    int ip;
+    pthread_mutex_t ip_lock;
 
 } CONTAINERS;
 

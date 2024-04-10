@@ -76,6 +76,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                     invocation->container_port = temp->containers[i]->c_port;
                     free(temp->containers[i]);
                     temp->containers[i] = NULL;
+                    disk->memory += invocation->memory;
                     pthread_mutex_unlock(&disk->disk_lock);
                     restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
                     return;
@@ -124,6 +125,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                 invocation->container_port = temp->containers[i]->c_port;
                 free(temp->containers[i]);
                 temp->containers[i] = NULL;
+                disk->memory += invocation->memory;
                 pthread_mutex_unlock(&disk->disk_lock);
                 restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
                 return;

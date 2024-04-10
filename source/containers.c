@@ -82,6 +82,9 @@ CONTAINERS * initPodman(int n_threads) {
 
     containers->n_threads = n_threads;
 
+    containers->ip = 1;
+    pthread_mutex_init(&containers->ip_lock, NULL);
+
     return containers;
 }
 
@@ -100,6 +103,8 @@ void destroyPodman(CONTAINERS *containers, int n_threads) {
     free(containers->thread_ids);
     free(containers->initFile);
     free(containers);
+
+    pthread_mutex_destroy(&containers->ip_lock);
 
     curl_global_cleanup();
 }
@@ -124,10 +129,21 @@ void freePort(CONTAINERS *containers, int port) {
     pthread_mutex_unlock(&containers->ports_lock);
 }
 
-char* createContainerJson(int port, int size) {
+char* createContainerJson(int port, int size, CONTAINERS *containers) {
+
+    int ip1 = 0;
+    pthread_mutex_lock(&containers->ip_lock);
+    containers->ip += 1;
+    int ip2 = containers->ip;
+    pthread_mutex_unlock(&containers->ip_lock);
+    while (ip2 > 255) {
+        ip2 -= 256;
+        ip1 += 1;
+    }
+
     //Create main object
     char * json_str = malloc(sizeof (char) * size);
-    memset(json_str, 0, 200);
+    memset(json_str, 0, size);
     json_object *json = json_object_new_object();
     json_object_object_add(json, "image", json_object_new_string("docker.io/openwhisk/action-python-v3.9"));
     json_object_object_add(json, "privileged", json_object_new_boolean(1));
@@ -137,7 +153,13 @@ char* createContainerJson(int port, int size) {
     json_object_object_add(portmappings, "host_port", json_object_new_int(port));
     json_object_array_add(portarray, portmappings);
     json_object_object_add(json, "portmappings", portarray);
+    char *ip_str = malloc(sizeof(char) * 20);
+    memset(ip_str, 0, 20);
+    sprintf(ip_str, "10.88.%d.%d", ip1, ip2);
+    json_object_object_add(json, "static_ip", json_object_new_string(ip_str));
     strcpy(json_str, json_object_to_json_string(json));
+    free(ip_str);
+
     return json_str;
 }
 
@@ -152,7 +174,7 @@ char* createContainer(CONTAINERS *containers, invocation_t *invocation, int tid)
     struct string s;
     init_string(&s);
 
-    char *json_string = createContainerJson(port, 200);
+    char *json_string = createContainerJson(port, 250, containers);
 
     curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
     curl_easy_setopt(handle, CURLOPT_URL, "http://d/v3.0.0/libpod/containers/create");
@@ -194,9 +216,10 @@ void startContainer(CONTAINERS *containers, char * id, int tid) {
     curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
     curl_easy_setopt(handle, CURLOPT_URL, url);
     struct curl_slist *headers = NULL;
+    //headers = curl_slist_append(headers, "Expect:");
     headers = curl_slist_append(headers, "Content-Type: application/json");
     curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json_object_new_null()));
     curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
     res = curl_easy_perform(handle);
 
@@ -220,9 +243,13 @@ void initFunction(int port, CONTAINERS *containers, int tid) {
 
     if(curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_HEADER, "Content-Type: application/json");
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Expect:");
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        curl_easy_setopt(curl, CURLOPT_HEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, containers->initFile);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
+        //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
         res = curl_easy_perform(curl);
 
         //Wait for container to properly start
@@ -291,9 +318,10 @@ void removeContainer(CONTAINERS *containers, char *id, int port, CURL* curl) {
     curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, NULL);
+    //curl_easy_setopt(curl, CURLOPT_POSTFIELDS, NULL);
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "content-type: application/json");
+    headers = curl_slist_append(headers, "Expect:");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     res = curl_easy_perform(curl);
 
@@ -315,9 +343,10 @@ void checkpointContainer(CURL *handle, char *id) {
     curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
     curl_easy_setopt(handle, CURLOPT_URL, url);
     struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "content-type: application/json");
+    headers = curl_slist_append(headers, "Expect:");
     curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json_object_new_null()));
     curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
     res = curl_easy_perform(handle);
 
@@ -340,11 +369,35 @@ void restoreCheckpoint(CURL* handle, char *id) {
     curl_easy_setopt(handle, CURLOPT_UNIX_SOCKET_PATH, "/run/podman/podman.sock");
     curl_easy_setopt(handle, CURLOPT_URL, url);
     struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "content-type: application/json");
+    headers = curl_slist_append(headers, "Expect:");
     curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, NULL);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json_object_new_null()));
     curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
-    res = curl_easy_perform(handle);
+
+    int http_code = 500;
+    while (1) {
+        struct string s;
+        init_string(&s);
+        curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writefunc);
+        curl_easy_setopt(handle, CURLOPT_WRITEDATA, &s);
+        res = curl_easy_perform(handle);
+
+        json_object *jobj;
+        jobj = json_tokener_parse(s.ptr);
+        json_object *obj_res = json_object_object_get(jobj, "response");
+
+        http_code = json_object_get_int(obj_res);
+
+        if (http_code != 500) {
+            free(s.ptr);
+            break;
+        }
+        printf("%s\n", s.ptr);
+        free(s.ptr);
+
+        usleep(1000);
+    }
 
     if (res != CURLE_OK) {
         printf("%s\n", curl_easy_strerror(res));
