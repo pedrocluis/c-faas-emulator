@@ -15,5 +15,6 @@ void insertRamItem(invocation_t * invocation, ram_t *ram);
 
 int freeRam(int memory, ram_t *ram, int logging, CONTAINERS *containers, pthread_mutex_t * lock);
 
+void initRam(ram_t* ram, options_t * options);
 
 #endif //SIMULATOR_RAM_CACHE_H

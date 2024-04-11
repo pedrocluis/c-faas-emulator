@@ -28,5 +28,7 @@ void checkpointContainer(CURL* handle, char *id);
 
 void restoreCheckpoint(CURL* handle, char *id);
 
+void removeFromRam(cont_ram* args);
+
 
 #endif

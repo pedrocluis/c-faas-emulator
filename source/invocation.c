@@ -44,7 +44,7 @@ void line_to_invocation(invocation_t * invocation, char* line) {
     invocation->occupied = NULL;
 }
 
-int getTid(CONTAINERS* containers) {
+int getTid(CONTAINERS* containers, ) {
     pid_t x = syscall(__NR_gettid);
 
     for (int i = 0; i < containers->n_threads; i++) {

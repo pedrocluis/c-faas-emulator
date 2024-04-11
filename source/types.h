@@ -8,7 +8,7 @@
 #include <curl/curl.h>
 #include "C-Thread-Pool-master/thpool.h"
 
-#define MAX_CONTAINERS 3
+#define MAX_CONTAINERS 8
 
 typedef struct CONTAINERS{
     int ports[500];
@@ -19,9 +19,12 @@ typedef struct CONTAINERS{
     CURL **curl_handles;
     CURL **api_handles;
 
+
     CURL *checkpoint_handle;
     CURL *restore_handle;
     int n_threads;
+
+    CURL *remove_handle;
 
     int ip;
     pthread_mutex_t ip_lock;
@@ -139,6 +142,8 @@ typedef struct {
     int threshold;
     float cold_latency;
     int podman;
+    int read_threads;
+    int write_threads;
 } options_t;
 
 typedef struct ram_node{
@@ -151,6 +156,12 @@ typedef struct ram_t{
     int memory;
     int * cache_occupied;
     pthread_mutex_t cache_lock;
+    read_buffer_t * remove_buffer;
 } ram_t;
+
+typedef struct cont_ram {
+    ram_t *ram;
+    CONTAINERS *containers;
+} cont_ram;
 
 #endif //SIMULATOR_TYPES_H

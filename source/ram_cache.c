@@ -5,6 +5,18 @@
 #include <string.h>
 #include "ram_cache.h"
 
+void initRam(ram_t* ram, options_t * options) {
+    ram->memory = options->memory;
+    ram->cache_occupied = malloc(sizeof (int));
+    *(ram->cache_occupied) = 0;
+    ram->head = NULL;
+    ram->remove_buffer = malloc(sizeof (read_buffer_t));
+    ram->remove_buffer->buffer_size = 0;
+    pthread_mutex_init(&ram->remove_buffer->read_lock, NULL);
+    pthread_cond_init(&ram->remove_buffer->cond_var, NULL);
+    pthread_mutex_init(&ram->cache_lock, NULL);
+}
+
 //Try to find a function in the RAM cache
 invocation_t * searchRam(char *function, ram_t *ram) {
 
@@ -68,6 +80,14 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
+void addToRemoveBuffer(invocation_t * invocation, ram_t * ram) {
+    pthread_mutex_lock(&ram->remove_buffer->read_lock);
+    ram->remove_buffer->buffer[ram->remove_buffer->buffer_size] = invocation;
+    ram->remove_buffer->buffer_size += 1;
+    pthread_cond_signal(&ram->remove_buffer->cond_var);
+    pthread_mutex_unlock(&ram->remove_buffer->read_lock);
+}
+
 int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pthread_mutex_t* lock) {
     int freed = 0;
     int tid = getTid(containers);
@@ -86,10 +106,8 @@ int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pt
         pthread_mutex_unlock(lock);
         while (to_remove != NULL) {
             ram_node * iter = to_remove;
-            removeContainer(containers, iter->invocation->container_id, iter->invocation->container_port, containers->api_handles[tid]);
+            addToRemoveBuffer(iter->invocation, ram);
             to_remove = to_remove->next;
-            free(iter->invocation->hash_function);
-            free(iter->invocation);
             free(iter);
         }
         pthread_mutex_lock(lock);

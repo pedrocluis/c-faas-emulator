@@ -122,6 +122,8 @@ void read_options(options_t *options, int n, char **params) {
     options->memory = 0;
     options->nodisk = 0;
     options->podman = 0;
+    options->read_threads = 1;
+    options->write_threads = 1;
 
     for( int i = 1; i < n; i+=1 ) {
         if( strcmp( params[i], "-input" ) == 0 ) {
@@ -151,6 +153,12 @@ void read_options(options_t *options, int n, char **params) {
         }
         if (strcmp(params[i], "-podman") == 0) {
             options->podman = 1;
+        }
+        if (strcmp(params[i], "-write_threads") == 0) {
+            options->write_threads = atoi(params[i+1]);
+        }
+        if (strcmp(params[i], "-read_threads") == 0) {
+            options->read_threads = atoi(params[i+1]);
         }
     }
     test_speeds(options);

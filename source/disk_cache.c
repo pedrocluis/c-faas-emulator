@@ -260,7 +260,6 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
                 return;
             }
 
-            //TODO CAPAZ DE ESTAR ERRADO POR CAUSA DE LOCKS
             iter->containers[i] = malloc(sizeof (container_disk_t));
             iter->containers[i]->c_port = invocation->container_port;
             iter->containers[i]->c_id = invocation->container_id;
@@ -319,7 +318,7 @@ void writeToDisk(check_ram_args * args) {
 
     while (1) {
         //Check every 100 milliseconds
-        usleep(1000 * 100);
+        usleep(1000);
 
         //Check if emulation has ended
         pthread_mutex_lock(&ram->cache_lock);
@@ -336,6 +335,9 @@ void writeToDisk(check_ram_args * args) {
                 ram_node * iter = ram->head;
                 buffer[buffer_size] = iter->invocation;
                 *(ram->cache_occupied) -= buffer[buffer_size]->memory;
+                if (disk->containers != NULL) {
+                    ram->memory += buffer[buffer_size]->memory;
+                }
                 buffer_size++;
                 ram->head = ram->head->next;
                 free(iter);
@@ -357,7 +359,9 @@ void writeToDisk(check_ram_args * args) {
                 free(buffer[i]->occupied);
                 free(buffer[i]->hash_function);
                 pthread_mutex_lock(&ram->cache_lock);
-                ram->memory += buffer[i]->memory;
+                if (disk->containers == NULL) {
+                    ram->memory += buffer[i]->memory;
+                }
                 pthread_mutex_unlock(&ram->cache_lock);
                 free(buffer[i]);
                 buffer[i] = NULL;

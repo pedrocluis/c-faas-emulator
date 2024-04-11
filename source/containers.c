@@ -80,6 +80,8 @@ CONTAINERS * initPodman(int n_threads) {
     containers->checkpoint_handle = curl_easy_init();
     containers->restore_handle = curl_easy_init();
 
+    containers->remove_handle = curl_easy_init();
+
     containers->n_threads = n_threads;
 
     containers->ip = 1;
@@ -99,6 +101,7 @@ void destroyPodman(CONTAINERS *containers, int n_threads) {
     }
     curl_easy_cleanup(containers->checkpoint_handle);
     curl_easy_cleanup(containers->restore_handle);
+    curl_easy_cleanup(containers->remove_handle);
     free(containers->curl_handles);
     free(containers->thread_ids);
     free(containers->initFile);
@@ -404,4 +407,37 @@ void restoreCheckpoint(CURL* handle, char *id) {
         exit(1);
     }
     curl_easy_reset(handle);
+}
+
+void removeFromRam(cont_ram *args) {
+    CONTAINERS * containers = args->containers;
+    ram_t * ram = args->ram;
+
+    while(1) {
+        //Wait for a read request from another thread
+        pthread_mutex_lock(&ram->remove_buffer->read_lock);
+        while (ram->remove_buffer->buffer_size == 0) {
+            pthread_cond_wait(&ram->remove_buffer->cond_var, &ram->remove_buffer->read_lock);
+        }
+
+        //Extract first invocation
+        invocation_t * inv = ram->remove_buffer->buffer[0];
+
+        //Check if the emulation has ended
+        if (strcmp(inv->hash_function, "quit") == 0) {
+            pthread_mutex_unlock(&ram->remove_buffer->read_lock);
+            break;
+        }
+
+        //Shift the queue one place and update the buffer size
+        for(int n = 0; n < ram->remove_buffer->buffer_size ; n++) {
+            ram->remove_buffer->buffer[n] = ram->remove_buffer->buffer[n + 1];
+        }
+        ram->remove_buffer->buffer_size -= 1;
+        pthread_mutex_unlock(&ram->remove_buffer->read_lock);
+
+        removeContainer(containers, inv->container_id, inv->container_port, containers->remove_handle);
+        free(inv->hash_function);
+        free(inv);
+    }
 }

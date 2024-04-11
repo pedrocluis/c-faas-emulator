@@ -12,7 +12,7 @@
 #include "containers.h"
 
 //Closes and destroys the threadpools
-void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, ram_t * ram) {
+void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, threadpool remove, ram_t * ram) {
     thpool_wait(master);
     thpool_destroy(master);
 
@@ -36,6 +36,15 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
 
     thpool_wait(write);
     thpool_destroy(write);
+
+    pthread_mutex_lock(&ram->remove_buffer->read_lock);
+    ram->remove_buffer->buffer[0] = &quit;
+    ram->remove_buffer->buffer_size = 1000;
+    pthread_cond_broadcast(&ram->remove_buffer->cond_var);
+    pthread_mutex_unlock(&ram->remove_buffer->read_lock);
+
+    thpool_wait(remove);
+    thpool_destroy(write);
 }
 
 void main_loop(options_t *options) {
@@ -52,11 +61,8 @@ void main_loop(options_t *options) {
 
     //Start ram cache
     ram_t *ram = malloc(sizeof(ram_t));
-    ram->memory = options->memory;
-    ram->cache_occupied = malloc(sizeof (int));
-    *(ram->cache_occupied) = 0;
-    ram->head = NULL;
-    pthread_mutex_init(&ram->cache_lock, NULL);
+    initRam(ram, options);
+
 
     //Start disk cache
     disk_t *disk = malloc(sizeof(disk_t));
@@ -65,8 +71,9 @@ void main_loop(options_t *options) {
 
     //Start thread-pools
     threadpool pool = thpool_init(options->threads);
-    threadpool write_pool = thpool_init(1);
-    threadpool read_pool = thpool_init(1);
+    threadpool write_pool = thpool_init(options->write_threads);
+    threadpool read_pool = thpool_init(options->read_threads);
+    threadpool remove_pool = thpool_init(1);
 
     //Create args to pass to the always running write to disk thread
     check_ram_args * cr_args = malloc(sizeof (check_ram_args));
@@ -78,6 +85,10 @@ void main_loop(options_t *options) {
         thpool_add_work(write_pool, (void *) writeToDisk, cr_args);
     }
     thpool_add_work(read_pool, (void *) readFromDisk, disk);
+    cont_ram * rc_args = malloc(sizeof (cont_ram));
+    rc_args->ram = ram;
+    rc_args->containers = containers;
+    thpool_add_work(remove_pool, (void *) removeFromRam, rc_args);
 
     //Start stats
     stats_t * stats = malloc(sizeof (stats_t));
@@ -156,7 +167,7 @@ void main_loop(options_t *options) {
     fclose(fp);
 
     // Close the pools and files and delete disk cache
-    endPools(disk, pool, write_pool, read_pool, ram);
+    endPools(disk, pool, write_pool, read_pool, remove_pool, ram);
     freeDisk(options->disk * 1000, disk);
     closeFiles(stats);
     free(stats);
