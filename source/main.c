@@ -51,7 +51,7 @@ void main_loop(options_t *options) {
 
     CONTAINERS *containers = NULL;
     if (options->podman) {
-        containers = initPodman(options->threads);
+        containers = initPodman(options->threads, options->write_threads, options->read_threads);
     }
 
     //Counter to generate stats
@@ -168,7 +168,7 @@ void main_loop(options_t *options) {
 
     // Close the pools and files and delete disk cache
     endPools(disk, pool, write_pool, read_pool, remove_pool, ram);
-    freeDisk(options->disk * 1000, disk);
+    freeDisk(options->disk * 1000, disk, containers->api_handles[0]);
     closeFiles(stats);
     free(stats);
     free(cr_args);

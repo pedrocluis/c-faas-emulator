@@ -18,11 +18,18 @@ typedef struct CONTAINERS{
     pid_t *thread_ids;
     CURL **curl_handles;
     CURL **api_handles;
-
-
-    CURL *checkpoint_handle;
-    CURL *restore_handle;
     int n_threads;
+
+
+    pid_t *checkpoint_thread_ids;
+    pid_t *restore_thread_ids;
+    int n_checkpoint_threads;
+
+    pthread_mutex_t checkpoint_lock;
+    pthread_mutex_t restore_lock;
+    CURL **checkpoint_handles;
+    CURL **restore_handles;
+    int n_restore_threads;
 
     CURL *remove_handle;
 

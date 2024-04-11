@@ -90,7 +90,6 @@ void addToRemoveBuffer(invocation_t * invocation, ram_t * ram) {
 
 int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pthread_mutex_t* lock) {
     int freed = 0;
-    int tid = getTid(containers);
 
     if (containers != NULL) {
         ram_node * to_remove = ram->head;

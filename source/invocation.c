@@ -44,24 +44,24 @@ void line_to_invocation(invocation_t * invocation, char* line) {
     invocation->occupied = NULL;
 }
 
-int getTid(CONTAINERS* containers, ) {
+int getTid(int n_threads, pid_t * thread_ids, pthread_mutex_t* lock) {
     pid_t x = syscall(__NR_gettid);
 
-    for (int i = 0; i < containers->n_threads; i++) {
-        if (containers->thread_ids[i] == x) {
+    for (int i = 0; i < n_threads; i++) {
+        if (thread_ids[i] == x) {
             return i;
         }
     }
 
-    pthread_mutex_lock(&containers->ports_lock);
-    for (int i = 0; i < containers->n_threads; i++) {
-        if (containers->thread_ids[i] == 0) {
-            containers->thread_ids[i] = x;
-            pthread_mutex_unlock(&containers->ports_lock);
+    pthread_mutex_lock(lock);
+    for (int i = 0; i < n_threads; i++) {
+        if (thread_ids[i] == 0) {
+            thread_ids[i] = x;
+            pthread_mutex_unlock(lock);
             return i;
         }
     }
-    pthread_mutex_unlock(&containers->ports_lock);
+    pthread_mutex_unlock(lock);
     return -1;
 }
 
@@ -77,7 +77,11 @@ void allocate_invocation(args_t *args) {
     long memsetLatency = 0;
     long s;
 
-    int tid = getTid(args->containers);
+    int tid;
+
+    if (args->containers != NULL) {
+        tid = getTid(args->containers->n_threads, args->containers->thread_ids, &args->containers->ports_lock);
+    }
 
     pthread_mutex_lock(&args->ram->cache_lock);
     //First check if the function is in RAM

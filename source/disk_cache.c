@@ -59,7 +59,12 @@ int findInDisk(char * name, disk_t * disk) {
 //Get function from disk
 void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
 
-    //TODO: ADD CASE FOR DOCKER!
+    int tid;
+    CURL* handle;
+    if (disk->containers != NULL) {
+        tid = getTid(disk->containers->n_restore_threads, disk->containers->restore_thread_ids, &disk->containers->restore_lock);
+        handle = disk->containers->restore_handles[tid];
+    }
 
     pthread_mutex_lock(&disk->disk_lock);
 
@@ -78,7 +83,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                     temp->containers[i] = NULL;
                     disk->memory += invocation->memory;
                     pthread_mutex_unlock(&disk->disk_lock);
-                    restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
+                    restoreCheckpoint(handle, invocation->container_id);
                     return;
                 }
                 i++;
@@ -127,7 +132,7 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
                 temp->containers[i] = NULL;
                 disk->memory += invocation->memory;
                 pthread_mutex_unlock(&disk->disk_lock);
-                restoreCheckpoint(disk->containers->restore_handle, invocation->container_id);
+                restoreCheckpoint(handle, invocation->container_id);
                 return;
             }
             i++;
@@ -224,9 +229,16 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
 
     invocation_t * invocation = (invocation_t*) invocation_p;
 
+    int tid;
+    CURL* handle;
+    if (disk->containers != NULL) {
+        tid = getTid(disk->containers->n_checkpoint_threads, disk->containers->checkpoint_thread_ids, &disk->containers->checkpoint_lock);
+        handle = disk->containers->checkpoint_handles[tid];
+    }
+
     //Check if disk cache has space
     if (disk->memory < invocation->memory) {
-        int freed = freeDisk(invocation->memory, disk);
+        int freed = freeDisk(invocation->memory, disk, handle);
         if (freed != 1) {
             printf("Non able to add to disk cache\n");
             pthread_mutex_unlock(&disk->disk_lock);
@@ -255,7 +267,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
                 i++;
             }
             if (i == MAX_CONTAINERS) {
-                removeContainer(disk->containers, invocation->container_id, invocation->container_port, disk->containers->checkpoint_handle);
+                removeContainer(disk->containers, invocation->container_id, invocation->container_port, handle);
                 pthread_mutex_unlock(&disk->disk_lock);
                 return;
             }
@@ -265,7 +277,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
             iter->containers[i]->c_id = invocation->container_id;
             disk->memory -= invocation->memory;
             pthread_mutex_unlock(&disk->disk_lock);
-            checkpointContainer(disk->containers->checkpoint_handle, invocation->container_id);
+            checkpointContainer(handle, invocation->container_id);
             return;
         }
     }
@@ -284,7 +296,7 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
         new_node->containers[0]->c_port = invocation->container_port;
         new_node->containers[0]->c_id = invocation->container_id;
         pthread_mutex_unlock(&disk->disk_lock);
-        checkpointContainer(disk->containers->checkpoint_handle, invocation->container_id);
+        checkpointContainer(handle, invocation->container_id);
         pthread_mutex_lock(&disk->disk_lock);
     }
 
@@ -315,6 +327,8 @@ void writeToDisk(check_ram_args * args) {
     ram_t * ram = args->ram;
     invocation_t *buffer[100];
     int buffer_size = 0;
+
+
 
     while (1) {
         //Check every 100 milliseconds
@@ -373,7 +387,7 @@ void writeToDisk(check_ram_args * args) {
     }
 }
 
-int freeDisk(int memory, disk_t *disk) {
+int freeDisk(int memory, disk_t *disk, CURL* handle) {
     disk_node * temp;
     int freed = 0;
     //Start deleting items from the head until we have no more items, or we have freed enough memory
@@ -399,7 +413,7 @@ int freeDisk(int memory, disk_t *disk) {
                 }
                 disk->memory += (int)temp->memory;
                 freed += (int)temp->memory;
-                removeContainer(disk->containers, temp->containers[i]->c_id, temp->containers[i]->c_port, disk->containers->checkpoint_handle);
+                removeContainer(disk->containers, temp->containers[i]->c_id, temp->containers[i]->c_port, handle);
             }
             free(temp->function);
             free(temp);

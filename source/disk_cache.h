@@ -13,7 +13,7 @@ void addToReadBuffer(invocation_t * invocation, disk_t * disk, float cold_lat);
 void readFromDisk(disk_t *disk);
 int findInDisk(char * name, disk_t * disk);
 
-int freeDisk(int memory, disk_t *disk);
+int freeDisk(int memory, disk_t *disk, CURL* handle);
 void initDisk(disk_t * disk, options_t * options);
 
 void writeToDisk(check_ram_args * args);

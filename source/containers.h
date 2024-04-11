@@ -8,7 +8,7 @@
 #include "json-c/json.h"
 #include "types.h"
 
-CONTAINERS * initPodman(int n_threads);
+CONTAINERS * initPodman(int n_threads, int n_checkpoint_threads, int n_restore_threads);
 
 int getPort(CONTAINERS *containers);
 

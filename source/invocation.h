@@ -12,7 +12,7 @@
 
 void line_to_invocation(invocation_t * invocation, char *line);
 void allocate_invocation(args_t *args);
-int getTid(CONTAINERS* containers);
+int getTid(int n_threads, pid_t * thread_ids, pthread_mutex_t * lock);
 
 
 #endif //SOURCE_INVOCATION_H

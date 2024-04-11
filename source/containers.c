@@ -23,6 +23,7 @@ void init_string(struct string *s) {
     s->ptr[0] = '\0';
 }
 
+
 size_t writefunc(void *ptr, size_t size, size_t nmemb, struct string *s)
 {
     size_t new_len = s->len + size*nmemb;
@@ -60,7 +61,7 @@ char *readInitFile(char *file) {
     return buffer;
 }
 
-CONTAINERS * initPodman(int n_threads) {
+CONTAINERS * initPodman(int n_threads, int n_checkpoint_threads, int n_restore_threads) {
     CONTAINERS *containers = malloc(sizeof (CONTAINERS));
     memset(containers->ports, 0, sizeof containers->ports);
     pthread_mutex_init(&containers->ports_lock, NULL);
@@ -71,18 +72,35 @@ CONTAINERS * initPodman(int n_threads) {
     containers->curl_handles = malloc(sizeof (CURL *) * n_threads);
     containers->api_handles = malloc(sizeof (CURL *) * n_threads);
 
+    containers->checkpoint_thread_ids = malloc(sizeof (pid_t) * n_checkpoint_threads);
+    containers->checkpoint_handles = malloc(sizeof (CURL *) * n_threads);
+
+    containers->restore_thread_ids = malloc(sizeof (pid_t) * n_threads);
+    containers->restore_handles = malloc(sizeof (CURL *) * n_threads);
+
     for (int i = 0; i < n_threads; i++) {
         containers->thread_ids[i] = 0;
         containers->curl_handles[i] = curl_easy_init();
         containers->api_handles[i] = curl_easy_init();
     }
 
-    containers->checkpoint_handle = curl_easy_init();
-    containers->restore_handle = curl_easy_init();
+    pthread_mutex_init(&containers->checkpoint_lock, NULL);
+    for (int i = 0; i < n_checkpoint_threads; i++) {
+        containers->checkpoint_thread_ids[i] = 0;
+        containers->checkpoint_handles[i] = curl_easy_init();
+    }
+
+    pthread_mutex_init(&containers->restore_lock, NULL);
+    for (int i = 0; i < n_restore_threads; i++) {
+        containers->restore_thread_ids[i] = 0;
+        containers->restore_handles[i] = curl_easy_init();
+    }
 
     containers->remove_handle = curl_easy_init();
 
     containers->n_threads = n_threads;
+    containers->n_checkpoint_threads = n_checkpoint_threads;
+    containers->n_restore_threads = n_restore_threads;
 
     containers->ip = 1;
     pthread_mutex_init(&containers->ip_lock, NULL);
@@ -99,15 +117,30 @@ void destroyPodman(CONTAINERS *containers, int n_threads) {
         curl_easy_cleanup(containers->curl_handles[i]);
         curl_easy_cleanup(containers->api_handles[i]);
     }
-    curl_easy_cleanup(containers->checkpoint_handle);
-    curl_easy_cleanup(containers->restore_handle);
+
+    for (int i = 0; i < containers->n_checkpoint_threads; i++) {
+        curl_easy_cleanup(containers->checkpoint_handles[i]);
+    }
+
+    for (int i = 0; i < containers->n_restore_threads; i++) {
+        curl_easy_cleanup(containers->restore_handles[i]);
+    }
+
     curl_easy_cleanup(containers->remove_handle);
     free(containers->curl_handles);
     free(containers->thread_ids);
+    free(containers->checkpoint_handles);
+    free(containers->checkpoint_thread_ids);
+    free(containers->restore_handles);
+    free(containers->restore_thread_ids);
+    free(containers->api_handles);
     free(containers->initFile);
     free(containers);
 
     pthread_mutex_destroy(&containers->ip_lock);
+    pthread_mutex_destroy(&containers->restore_lock);
+    pthread_mutex_destroy(&containers->checkpoint_lock);
+    pthread_mutex_destroy(&containers->ports_lock);
 
     curl_global_cleanup();
 }
