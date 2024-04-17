@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include "option_reader.h"
+#include "containers.h"
 
 //Function to get the current millisecond
 long getMs(){
@@ -161,7 +162,12 @@ void read_options(options_t *options, int n, char **params) {
             options->read_threads = atoi(params[i+1]);
         }
     }
-    test_speeds(options);
+    if (options->podman == 0) {
+        test_speeds(options);
+    }
+    else {
+        test_speeds_containers(options);
+    }
     //options->read_speed = 2000;
     //options->write_speed = 2000;
 }

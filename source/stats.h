@@ -15,7 +15,7 @@ void initFiles(stats_t * stats);
 
 void closeFiles(stats_t * stats);
 
-void saveLatency(stats_t * stats, long lat, char type, long freeRamLatency, long findDiskLatency, long addToReadBufferLatency, long memsetLatency);
+void saveLatency(stats_t * stats, long lat, char type, long freeRamLatency, long findDiskLatency, long addToReadBufferLatency, long memsetLatency, long createContainerLatency, long startContainerLatency, long initFunctionLatency, long restoreCheckpointLatency);
 
 void saveStarts(stats_t * stats, long ms);
 

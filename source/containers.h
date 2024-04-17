@@ -30,5 +30,9 @@ void restoreCheckpoint(CURL* handle, char *id);
 
 void removeFromRam(cont_ram* args);
 
+void killContainer(char *id, CURL* curl);
+
+void test_speeds_containers(options_t * options);
+
 
 #endif

@@ -75,6 +75,10 @@ void allocate_invocation(args_t *args) {
     long findInDiskLatency = 0;
     long addToReadBufferLatency = 0;
     long memsetLatency = 0;
+    long createContainerLatency = 0;
+    long startContainerLatency = 0;
+    long restoreCheckpointLatency = 0;
+    long initFunctionLatency = 0;
     long s;
 
     int tid;
@@ -110,7 +114,7 @@ void allocate_invocation(args_t *args) {
             int mem_needed = args->invocation->memory - args->ram->memory;
 
             s = getMs();
-            int freed;
+            int freed = 1;
 
             if (args->containers != NULL) {
                 freed = freeRam(mem_needed, args->ram, args->logging, args->containers, &args->ram->cache_lock);
@@ -151,6 +155,7 @@ void allocate_invocation(args_t *args) {
             //Add function to read queue and wait for signal that it has been read
             addToReadBuffer(args->invocation, args->disk, args->cold_lat);
             addToReadBufferLatency = getMs() - s;
+            s =getMs();
             pthread_mutex_lock(&cond_lock);
             while (read_bool == 0) {
                 pthread_cond_wait(&cond, &cond_lock);
@@ -158,6 +163,7 @@ void allocate_invocation(args_t *args) {
             pthread_mutex_unlock(&cond_lock);
             pthread_mutex_destroy(&cond_lock);
             pthread_cond_destroy(&cond);
+            restoreCheckpointLatency = getMs() - s;
         }
 
         pthread_mutex_lock(&args->ram->cache_lock);
@@ -186,9 +192,15 @@ void allocate_invocation(args_t *args) {
 
             if (args->containers != NULL) {
                 //Run container and initialize function
+                s = getMs();
                 char *c_id = createContainer(args->containers, args->invocation, tid);
+                createContainerLatency = getMs() - s;
+                s = getMs();
                 startContainer(args->containers, c_id, tid);
+                startContainerLatency = getMs() - s;
+                s = getMs();
                 initFunction(args->invocation->container_port, args->containers, tid);
+                initFunctionLatency = getMs() -s;
                 pthread_mutex_lock(&args->ram->cache_lock);
             }
 
@@ -218,7 +230,7 @@ void allocate_invocation(args_t *args) {
     }
 
     //Write latency to file (for stats)
-    saveLatency(args->stats, lat, type, freeRamLatency, findInDiskLatency, addToReadBufferLatency, memsetLatency);
+    saveLatency(args->stats, lat, type, freeRamLatency, findInDiskLatency, addToReadBufferLatency, memsetLatency, createContainerLatency, startContainerLatency, initFunctionLatency, restoreCheckpointLatency);
     pthread_mutex_unlock(&args->ram->cache_lock);
 
     if (args->containers != NULL) {

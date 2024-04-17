@@ -199,7 +199,12 @@ void readFromDisk(disk_t *disk) {
         }
 
         pthread_mutex_lock(&disk->read_buffer->read_lock);
-        disk->time_to_read -= (float)inv->memory / disk->read_speed;
+        if (disk->containers == NULL) {
+            disk->time_to_read -= (float)inv->memory / disk->read_speed;
+        }
+        else {
+            disk->time_to_read -= disk->read_speed;
+        }
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
         pthread_cond_signal(inv->cond);
         pthread_mutex_unlock(inv->cond_lock);
@@ -209,18 +214,37 @@ void readFromDisk(disk_t *disk) {
 void addToReadBuffer(invocation_t * invocation, disk_t * disk, float cold_lat) {
 
     pthread_mutex_lock(&disk->read_buffer->read_lock);
-    //Check if a lukewarm is beneficial
-    if (disk->time_to_read + (float)invocation->memory / disk->read_speed >= 0.8 * cold_lat || disk->read_buffer->buffer_size >= 100) {
-        rejectRead(invocation);
+
+    if (disk->containers == NULL) {
+        //Check if a lukewarm is beneficial
+        if (disk->time_to_read + (float)invocation->memory / disk->read_speed >= 0.8 * cold_lat || disk->read_buffer->buffer_size >= 100) {
+            rejectRead(invocation);
+            pthread_mutex_unlock(&disk->read_buffer->read_lock);
+            return;
+        }
+        //Update time to read and add invocation to buffer
+        disk->time_to_read += (float)invocation->memory / disk->read_speed;
+        disk->read_buffer->buffer[disk->read_buffer->buffer_size] = invocation;
+        disk->read_buffer->buffer_size += 1;
+        pthread_cond_signal(&disk->read_buffer->cond_var);
         pthread_mutex_unlock(&disk->read_buffer->read_lock);
-        return;
     }
-    //Update time to read and add invocation to buffer
-    disk->time_to_read += (float)invocation->memory / disk->read_speed;
-    disk->read_buffer->buffer[disk->read_buffer->buffer_size] = invocation;
-    disk->read_buffer->buffer_size += 1;
-    pthread_cond_signal(&disk->read_buffer->cond_var);
-    pthread_mutex_unlock(&disk->read_buffer->read_lock);
+
+    else {
+        //Check if a lukewarm is beneficial
+        if (disk->time_to_read +  disk->read_speed >= cold_lat || disk->read_buffer->buffer_size >= 100) {
+            rejectRead(invocation);
+            pthread_mutex_unlock(&disk->read_buffer->read_lock);
+            return;
+        }
+        //Update time to read and add invocation to buffer
+        disk->time_to_read +=  disk->read_speed;
+        disk->read_buffer->buffer[disk->read_buffer->buffer_size] = invocation;
+        disk->read_buffer->buffer_size += 1;
+        pthread_cond_signal(&disk->read_buffer->cond_var);
+        pthread_mutex_unlock(&disk->read_buffer->read_lock);
+    }
+
 }
 
 void insertDiskItem(void * invocation_p, disk_t *disk) {
@@ -267,8 +291,10 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
                 i++;
             }
             if (i == MAX_CONTAINERS) {
-                removeContainer(disk->containers, invocation->container_id, invocation->container_port, handle);
+                //addToRemoveBuffer(invocation, invocation.);
                 pthread_mutex_unlock(&disk->disk_lock);
+                killContainer(invocation->container_id, handle);
+                //removeContainer(disk->containers, invocation->container_id, invocation->container_port, handle);
                 return;
             }
 

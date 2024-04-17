@@ -8,7 +8,7 @@
 #include <curl/curl.h>
 #include "C-Thread-Pool-master/thpool.h"
 
-#define MAX_CONTAINERS 8
+#define MAX_CONTAINERS 20
 
 typedef struct CONTAINERS{
     int ports[500];
@@ -64,6 +64,10 @@ typedef struct {
     long findDiskLatency;
     long addToReadBufferLatency;
     long memsetLatency;
+    long createContainerLatency;
+    long startContainerLatency;
+    long initFunctionLatency;
+    long restoreCheckpointLatency;
     stats_t * stats;
 }args_stats;
 
@@ -84,7 +88,7 @@ typedef struct invocation_t{
 } invocation_t;
 
 typedef struct read_buffer_t {
-    invocation_t *buffer[100];
+    invocation_t *buffer[1000];
     int buffer_size;
     pthread_cond_t cond_var;
     pthread_mutex_t read_lock;

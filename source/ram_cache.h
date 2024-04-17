@@ -17,4 +17,6 @@ int freeRam(int memory, ram_t *ram, int logging, CONTAINERS *containers, pthread
 
 void initRam(ram_t* ram, options_t * options);
 
+void addToRemoveBuffer(invocation_t * invocation, ram_t * ram);
+
 #endif //SIMULATOR_RAM_CACHE_H

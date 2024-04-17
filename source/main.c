@@ -44,7 +44,7 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
     pthread_mutex_unlock(&ram->remove_buffer->read_lock);
 
     thpool_wait(remove);
-    thpool_destroy(write);
+    thpool_destroy(remove);
 }
 
 void main_loop(options_t *options) {

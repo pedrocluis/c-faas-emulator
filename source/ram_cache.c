@@ -105,6 +105,7 @@ int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pt
         pthread_mutex_unlock(lock);
         while (to_remove != NULL) {
             ram_node * iter = to_remove;
+            //killContainer(iter->invocation->container_id, containers->remove_handle);
             addToRemoveBuffer(iter->invocation, ram);
             to_remove = to_remove->next;
             free(iter);

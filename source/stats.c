@@ -34,11 +34,11 @@ void closeFiles(stats_t * stats) {
 
 void writeLatency(void * args) {
     args_stats * a = (args_stats*) args;
-    fprintf(a->stats->f_latency, "%ld,%c,%ld,%ld,%ld,%ld\n", a->lat, a->type, a->freeRamLatency, a->findDiskLatency, a->addToReadBufferLatency, a->memsetLatency);
+    fprintf(a->stats->f_latency, "%ld,%c,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld\n", a->lat, a->type, a->freeRamLatency, a->findDiskLatency, a->addToReadBufferLatency, a->memsetLatency, a->createContainerLatency, a->startContainerLatency, a->initFunctionLatency, a->restoreCheckpointLatency);
     free(args);
 }
 
-void saveLatency(stats_t * stats, long lat, char type, long freeRamLatency, long findDiskLatency, long addToReadBufferLatency, long memsetLatency) {
+void saveLatency(stats_t * stats, long lat, char type, long freeRamLatency, long findDiskLatency, long addToReadBufferLatency, long memsetLatency, long createContainerLatency, long startContainerLatency, long initFunctionLatency, long restoreCheckpointLatency) {
     args_stats * args = malloc(sizeof (args_stats));
     args->lat = lat;
     args->type = type;
@@ -47,6 +47,10 @@ void saveLatency(stats_t * stats, long lat, char type, long freeRamLatency, long
     args->addToReadBufferLatency = addToReadBufferLatency;
     args->findDiskLatency = findDiskLatency;
     args->freeRamLatency = freeRamLatency;
+    args->createContainerLatency = createContainerLatency;
+    args->startContainerLatency = startContainerLatency;
+    args->initFunctionLatency = initFunctionLatency;
+    args->restoreCheckpointLatency = restoreCheckpointLatency;
     thpool_add_work(stats->pool, writeLatency, args);
 }
 
