@@ -43,7 +43,6 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
     pthread_cond_broadcast(&ram->remove_buffer->cond_var);
     pthread_mutex_unlock(&ram->remove_buffer->read_lock);
 
-    thpool_wait(remove);
     thpool_destroy(remove);
 }
 
@@ -74,6 +73,9 @@ void main_loop(options_t *options) {
     threadpool write_pool = thpool_init(options->write_threads);
     threadpool read_pool = thpool_init(options->read_threads);
     threadpool remove_pool = thpool_init(1);
+    if (options->podman == 1) {
+        thpool_add_work(remove_pool, (void *) pruneDisk, containers);
+    }
 
     //Create args to pass to the always running write to disk thread
     check_ram_args * cr_args = malloc(sizeof (check_ram_args));
@@ -85,10 +87,6 @@ void main_loop(options_t *options) {
         thpool_add_work(write_pool, (void *) writeToDisk, cr_args);
     }
     thpool_add_work(read_pool, (void *) readFromDisk, disk);
-    cont_ram * rc_args = malloc(sizeof (cont_ram));
-    rc_args->ram = ram;
-    rc_args->containers = containers;
-    thpool_add_work(remove_pool, (void *) removeFromRam, rc_args);
 
     //Start stats
     stats_t * stats = malloc(sizeof (stats_t));

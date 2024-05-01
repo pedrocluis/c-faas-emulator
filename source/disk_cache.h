@@ -18,4 +18,6 @@ void initDisk(disk_t * disk, options_t * options);
 
 void writeToDisk(check_ram_args * args);
 
+void pruneDisk(CONTAINERS * containers);
+
 #endif //SIMULATOR_DISK_CACHE_H

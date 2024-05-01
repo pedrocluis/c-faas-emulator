@@ -80,14 +80,6 @@ void insertRamItem(invocation_t *invocation, ram_t *ram) {
 
 }
 
-void addToRemoveBuffer(invocation_t * invocation, ram_t * ram) {
-    pthread_mutex_lock(&ram->remove_buffer->read_lock);
-    ram->remove_buffer->buffer[ram->remove_buffer->buffer_size] = invocation;
-    ram->remove_buffer->buffer_size += 1;
-    pthread_cond_signal(&ram->remove_buffer->cond_var);
-    pthread_mutex_unlock(&ram->remove_buffer->read_lock);
-}
-
 int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pthread_mutex_t* lock) {
     int freed = 0;
 
@@ -103,10 +95,12 @@ int freeRam(int mem_needed, ram_t * ram, int logging, CONTAINERS *containers, pt
             last_to_remove->next = NULL;
         }
         pthread_mutex_unlock(lock);
+        int tid = getTid(containers->n_threads, containers->thread_ids, &containers->ports_lock);
         while (to_remove != NULL) {
             ram_node * iter = to_remove;
-            //killContainer(iter->invocation->container_id, containers->remove_handle);
-            addToRemoveBuffer(iter->invocation, ram);
+            curl_easy_cleanup(iter->invocation->handle);
+            killContainer(iter->invocation->container_id, containers->api_handles[tid]);
+            //freePort(containers, iter->invocation->container_port);
             to_remove = to_remove->next;
             free(iter);
         }

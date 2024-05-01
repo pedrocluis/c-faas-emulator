@@ -16,10 +16,8 @@ typedef struct CONTAINERS{
     char *initFile;
 
     pid_t *thread_ids;
-    CURL **curl_handles;
     CURL **api_handles;
     int n_threads;
-
 
     pid_t *checkpoint_thread_ids;
     pid_t *restore_thread_ids;
@@ -33,8 +31,9 @@ typedef struct CONTAINERS{
 
     CURL *remove_handle;
 
-    int ip;
-    pthread_mutex_t ip_lock;
+    int prune_in_progress;
+    int creation_in_progress;
+    pthread_mutex_t creation_lock;
 
 } CONTAINERS;
 
@@ -80,6 +79,7 @@ typedef struct invocation_t{
 
     char *container_id;
     int container_port;
+    CURL *handle;
 
     pthread_cond_t * cond;
     int * conc_freed;
@@ -105,7 +105,7 @@ typedef struct disk_node{
     long memory;
     void * next;
 
-    container_disk_t *containers[MAX_CONTAINERS];
+    container_disk_t *container;
 } disk_node;
 
 typedef struct disk_t{

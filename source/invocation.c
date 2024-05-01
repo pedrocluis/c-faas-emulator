@@ -99,6 +99,7 @@ void allocate_invocation(args_t *args) {
 
         args->invocation->container_id = inRam->container_id;
         args->invocation->container_port = inRam->container_port;
+        args->invocation->handle = inRam->handle;
 
         args->invocation->occupied = inRam->occupied;
         free(inRam->hash_function);
@@ -193,13 +194,14 @@ void allocate_invocation(args_t *args) {
             if (args->containers != NULL) {
                 //Run container and initialize function
                 s = getMs();
-                char *c_id = createContainer(args->containers, args->invocation, tid);
+                char *c_id = createContainer(args->containers, args->invocation, tid, 0);
                 createContainerLatency = getMs() - s;
                 s = getMs();
                 startContainer(args->containers, c_id, tid);
                 startContainerLatency = getMs() - s;
                 s = getMs();
-                initFunction(args->invocation->container_port, args->containers, tid);
+
+                initFunction(args->invocation->container_port, args->containers, tid, args->invocation->handle);
                 initFunctionLatency = getMs() -s;
                 pthread_mutex_lock(&args->ram->cache_lock);
             }
@@ -234,7 +236,7 @@ void allocate_invocation(args_t *args) {
     pthread_mutex_unlock(&args->ram->cache_lock);
 
     if (args->containers != NULL) {
-        runFunction(args->invocation->container_port, args->invocation->memory, args->invocation->duration, tid, args->containers);
+        runFunction(args->invocation->container_port, args->invocation->memory, args->invocation->duration, tid, args->containers, args->invocation->handle);
     }
     else {
         if (extra_sleep) {

@@ -74,36 +74,27 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
     if (temp != NULL && (strcmp(temp->function, invocation->hash_function) == 0)) {
 
         if (disk->containers != NULL) {
-            int i = 0;
-            while (i < MAX_CONTAINERS) {
-                if (temp->containers[i] != NULL) {
-                    invocation->container_id = temp->containers[i]->c_id;
-                    invocation->container_port = temp->containers[i]->c_port;
-                    free(temp->containers[i]);
-                    temp->containers[i] = NULL;
-                    disk->memory += invocation->memory;
-                    pthread_mutex_unlock(&disk->disk_lock);
-                    restoreCheckpoint(handle, invocation->container_id);
-                    return;
-                }
-                i++;
-            }
-            if (i == MAX_CONTAINERS) {
-                invocation->container_port = -1;
-                pthread_mutex_unlock(&disk->disk_lock);
-                return;
-            }
+
+            pthread_mutex_unlock(&disk->disk_lock);
+            createContainer(disk->containers, invocation, tid, 1);
+            restoreCheckpoint(handle, invocation->container_id, invocation->hash_function);
+            pthread_mutex_lock(&disk->containers->creation_lock);
+            disk->containers->creation_in_progress -= 1;
+            pthread_mutex_unlock(&disk->containers->creation_lock);
+            //pthread_mutex_lock(&disk->disk_lock);
         }
 
-        //Allocate the memory needed
-        invocation->occupied = malloc(temp->memory * MEGA);
-        FILE * fptr = fopen(temp->file, "r");
-        pthread_mutex_unlock(&disk->disk_lock);
-        //Read from the file
-        fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
-        pthread_mutex_lock(&disk->disk_lock);
-        fclose(fptr);
-        pthread_mutex_unlock(&disk->disk_lock);
+        else {
+            //Allocate the memory needed
+            invocation->occupied = malloc(temp->memory * MEGA);
+            FILE * fptr = fopen(temp->file, "r");
+            pthread_mutex_unlock(&disk->disk_lock);
+            //Read from the file
+            fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
+            pthread_mutex_lock(&disk->disk_lock);
+            fclose(fptr);
+            pthread_mutex_unlock(&disk->disk_lock);
+        }
         return;
     }
 
@@ -123,35 +114,24 @@ void retrieveFromDisk(invocation_t *invocation, disk_t *disk) {
     }
 
     if (disk->containers != NULL) {
-        int i = 0;
-        while (i < MAX_CONTAINERS) {
-            if (temp->containers[i] != NULL) {
-                invocation->container_id = temp->containers[i]->c_id;
-                invocation->container_port = temp->containers[i]->c_port;
-                free(temp->containers[i]);
-                temp->containers[i] = NULL;
-                disk->memory += invocation->memory;
-                pthread_mutex_unlock(&disk->disk_lock);
-                restoreCheckpoint(handle, invocation->container_id);
-                return;
-            }
-            i++;
-        }
-        if (i == MAX_CONTAINERS) {
-            invocation->container_port = -1;
-            pthread_mutex_unlock(&disk->disk_lock);
-            return;
-        }
+        pthread_mutex_unlock(&disk->disk_lock);
+        createContainer(disk->containers, invocation, tid, 1);
+        restoreCheckpoint(handle, invocation->container_id, invocation->hash_function);
+        pthread_mutex_lock(&disk->containers->creation_lock);
+        disk->containers->creation_in_progress -= 1;
+        pthread_mutex_unlock(&disk->containers->creation_lock);
+        //pthread_mutex_lock(&disk->disk_lock);
     }
-
-    // Read the file
-    invocation->occupied = malloc(temp->memory * MEGA);
-    FILE * fptr = fopen(temp->file, "r");
-    pthread_mutex_unlock(&disk->disk_lock);
-    fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
-    pthread_mutex_lock(&disk->disk_lock);
-    fclose(fptr);
-    pthread_mutex_unlock(&disk->disk_lock);
+    else {
+        // Read the file
+        invocation->occupied = malloc(temp->memory * MEGA);
+        FILE * fptr = fopen(temp->file, "r");
+        pthread_mutex_unlock(&disk->disk_lock);
+        fread(invocation->occupied, temp->memory * MEGA, 1, fptr);
+        pthread_mutex_lock(&disk->disk_lock);
+        fclose(fptr);
+        pthread_mutex_unlock(&disk->disk_lock);
+    }
 }
 
 void readFromDisk(disk_t *disk) {
@@ -270,44 +250,6 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
         }
     }
 
-    if (disk->containers != NULL) {
-        int present = 0;
-        disk_node * iter = disk->head;
-        if (iter != NULL) {
-            while (iter->next != NULL) {
-                if (strcmp(iter->function, invocation->hash_function) == 0) {
-                    present = 1;
-                    break;
-                }
-                iter = iter->next;
-            }
-        }
-        if (present == 1) {
-            int i = 0;
-            while (i < MAX_CONTAINERS) {
-                if (iter->containers[i] == NULL) {
-                    break;
-                }
-                i++;
-            }
-            if (i == MAX_CONTAINERS) {
-                //addToRemoveBuffer(invocation, invocation.);
-                pthread_mutex_unlock(&disk->disk_lock);
-                killContainer(invocation->container_id, handle);
-                //removeContainer(disk->containers, invocation->container_id, invocation->container_port, handle);
-                return;
-            }
-
-            iter->containers[i] = malloc(sizeof (container_disk_t));
-            iter->containers[i]->c_port = invocation->container_port;
-            iter->containers[i]->c_id = invocation->container_id;
-            disk->memory -= invocation->memory;
-            pthread_mutex_unlock(&disk->disk_lock);
-            checkpointContainer(handle, invocation->container_id);
-            return;
-        }
-    }
-
     //Create node
     disk_node * new_node = malloc(sizeof (disk_node));
     new_node->function = malloc(sizeof (char) * 65);
@@ -317,12 +259,15 @@ void insertDiskItem(void * invocation_p, disk_t *disk) {
 
     //Initialize docker vars
     if (disk->containers != NULL) {
-        memset(new_node->containers, 0, sizeof(new_node->containers));
-        new_node->containers[0] = malloc(sizeof (container_disk_t));
-        new_node->containers[0]->c_port = invocation->container_port;
-        new_node->containers[0]->c_id = invocation->container_id;
+        new_node->container = malloc(sizeof(container_disk_t));
+        memset(new_node->container, 0, sizeof(container_disk_t));
+        new_node->container->c_port = invocation->container_port;
+        new_node->container->c_id = invocation->container_id;
+        curl_easy_cleanup(invocation->handle);
         pthread_mutex_unlock(&disk->disk_lock);
-        checkpointContainer(handle, invocation->container_id);
+        checkpointContainer(handle, invocation->container_id, invocation->hash_function);
+        killContainer(invocation->container_id, handle);
+        //freePort(disk->containers, invocation->container_port);
         pthread_mutex_lock(&disk->disk_lock);
     }
 
@@ -354,11 +299,9 @@ void writeToDisk(check_ram_args * args) {
     invocation_t *buffer[100];
     int buffer_size = 0;
 
-
-
     while (1) {
-        //Check every 100 milliseconds
-        usleep(1000);
+        //Check every 10 milliseconds
+        usleep(10000);
 
         //Check if emulation has ended
         pthread_mutex_lock(&ram->cache_lock);
@@ -389,7 +332,7 @@ void writeToDisk(check_ram_args * args) {
             int i = 0;
             while (i < buffer_size) {
                 //If the function is already in disk we discard this RAM item
-                if (findInDisk(buffer[i]->hash_function, disk) == 0 || disk->containers != NULL) {
+                if (findInDisk(buffer[i]->hash_function, disk) == 0) {
                     insertDiskItem(buffer[i], disk);
                     if (args->logging == 1) {
                         printf("Stored %d MB in disk\n", buffer[i]->memory);
@@ -433,14 +376,11 @@ int freeDisk(int memory, disk_t *disk, CURL* handle) {
         while (disk->head != NULL && freed < memory) {
             temp = disk->head;
             disk->head = disk->head->next;
-            for(int i = 0; i<MAX_CONTAINERS; i++) {
-                if(temp->containers[i] == NULL) {
-                    continue;
-                }
-                disk->memory += (int)temp->memory;
-                freed += (int)temp->memory;
-                removeContainer(disk->containers, temp->containers[i]->c_id, temp->containers[i]->c_port, handle);
-            }
+            char * command = malloc(sizeof (char) * 100);
+            memset(command, 0, 100);
+            sprintf(command, "containers/%s", temp->function);
+            remove(command);
+            disk->memory += (int)temp->memory;
             free(temp->function);
             free(temp);
         }
@@ -464,4 +404,29 @@ void initDisk(disk_t * disk, options_t * options) {
     pthread_mutex_init(&disk->read_buffer->read_lock, NULL);
     pthread_cond_init(&disk->read_buffer->cond_var, NULL);
     pthread_mutex_init(&disk->disk_lock, NULL);
+}
+
+void pruneDisk(CONTAINERS * containers) {
+
+    while (1) {
+        usleep(1000 * 1000 * 10);
+        if (containers != NULL) {
+            containers->prune_in_progress = 1;
+
+            while (1) {
+                pthread_mutex_lock(&containers->creation_lock);
+                if ( containers->creation_in_progress == 0 ) {
+                    pthread_mutex_unlock(&containers->creation_lock);
+                    break;
+                }
+                pthread_mutex_unlock(&containers->creation_lock);
+                usleep(100);
+            }
+
+            CURL* curl = curl_easy_init();
+            pruneContainers(curl);
+            curl_easy_cleanup(curl);
+            containers->prune_in_progress = 0;
+        }
+    }
 }
