@@ -10,6 +10,7 @@
 #include "C-Thread-Pool-master/thpool.h"
 #include "stats.h"
 #include "containers.h"
+#include "minio.h"
 
 //Closes and destroys the threadpools
 void endPools(disk_t * disk, threadpool master, threadpool write, threadpool read, threadpool remove, ram_t * ram) {
@@ -43,6 +44,8 @@ void endPools(disk_t * disk, threadpool master, threadpool write, threadpool rea
     pthread_cond_broadcast(&ram->remove_buffer->cond_var);
     pthread_mutex_unlock(&ram->remove_buffer->read_lock);
 
+    disk->containers->creation_in_progress = -100;
+    thpool_wait(remove);
     thpool_destroy(remove);
 }
 
@@ -57,6 +60,7 @@ void main_loop(options_t *options) {
     int warm_starts = 0;
     int lukewarm_starts = 0;
     int cold_starts = 0;
+    int remote_starts = 0;
 
     //Start ram cache
     ram_t *ram = malloc(sizeof(ram_t));
@@ -67,6 +71,11 @@ void main_loop(options_t *options) {
     disk_t *disk = malloc(sizeof(disk_t));
     initDisk(disk, options);
     disk->containers = containers;
+
+    if (disk->net_cache != NULL) {
+        printf("Importing cache\n");
+        importCache(disk->net_cache, disk);
+    }
 
     //Start thread-pools
     threadpool pool = thpool_init(options->threads);
@@ -152,10 +161,13 @@ void main_loop(options_t *options) {
         args->warmStarts = &warm_starts;
         args->lukewarmStarts = &lukewarm_starts;
         args->coldStarts = &cold_starts;
+        args->remoteStarts = &remote_starts;
         args->cold_lat = options->cold_latency;
         args->stats = stats;
         args->containers = containers;
         args->n_threads = options->threads;
+        args->sleep = options->sleep;
+        args->restore_lat = options->restore_latency;
 
         //Add invocation to the thread pool
         thpool_add_work(pool, (void *) allocate_invocation, args);
@@ -166,10 +178,14 @@ void main_loop(options_t *options) {
 
     // Close the pools and files and delete disk cache
     endPools(disk, pool, write_pool, read_pool, remove_pool, ram);
-    freeDisk(options->disk * 1000, disk, containers->api_handles[0]);
     closeFiles(stats);
     free(stats);
     free(cr_args);
+
+    freeDisk(1000000000, disk, containers->api_handles[0]);
+    if (options->net_cache) {
+        destroyNetCache(disk->net_cache);
+    }
 
     if (options->podman) {
         destroyPodman(containers, options->threads);
@@ -179,6 +195,7 @@ void main_loop(options_t *options) {
     printf("Total invocations: %ld\n", count);
     printf("Warm starts: %d\n", warm_starts);
     printf("Lukewarm starts: %d\n", lukewarm_starts);
+    printf("Remote starts: %d\n", remote_starts);
     printf("Cold starts %d\n", cold_starts);
 }
 

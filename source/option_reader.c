@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include "option_reader.h"
 #include "containers.h"
+#include "minio.h"
 
 //Function to get the current millisecond
 long getMs(){
@@ -112,9 +113,31 @@ void test_speeds(options_t * options) {
     //TEMP
     //options->write_speed = write_speed;
     //options->read_speed = read_speed;
-    options->write_speed = write_speed;
-    options->read_speed = read_speed;
+    options->write_speed = write_speed / 1000;
+    options->read_speed = read_speed / 1000;
 
+}
+
+float test_bandwidth() {
+
+    float duration;
+    long mb200 = 200 * 1000000;
+
+    void * ptr = malloc(mb200);
+    FILE * test_net = fopen("containers/0000000000000000000000000000000000000000000000000000000000000000", "w");
+    fwrite(ptr, mb200, 1, test_net);
+    uploadObject("0000000000000000000000000000000000000000000000000000000000000000");
+    free(ptr);
+    fclose(test_net);
+    long start = getMs();
+    struct string data;
+    getObject("0000000000000000000000000000000000000000000000000000000000000000", &data);
+    long end = getMs();
+    remove("containers/0000000000000000000000000000000000000000000000000000000000000000");
+    deleteObject("0000000000000000000000000000000000000000000000000000000000000000");
+    free(data.ptr);
+    duration = end - start;
+    return 200.0 / duration;
 }
 
 //Read the parameters set by the user at run time
@@ -125,6 +148,10 @@ void read_options(options_t *options, int n, char **params) {
     options->podman = 0;
     options->read_threads = 1;
     options->write_threads = 1;
+    options->net_cache = 0;
+    options->sleep = 0;
+
+    int fixed = 0;
 
     for( int i = 1; i < n; i+=1 ) {
         if( strcmp( params[i], "-input" ) == 0 ) {
@@ -161,13 +188,37 @@ void read_options(options_t *options, int n, char **params) {
         if (strcmp(params[i], "-read_threads") == 0) {
             options->read_threads = atoi(params[i+1]);
         }
+        if (strcmp(params[i], "-net_cache") == 0) {
+            options->net_cache = 1;
+        }
+        if (strcmp(params[i], "-sleep") == 0) {
+            options->sleep = 1;
+        }
+        if (strcmp(params[i], "-fixed") == 0) {
+            fixed = 1;
+        }
     }
-    if (options->podman == 0) {
-        test_speeds(options);
+
+    if (fixed == 1) {
+        options->read_speed = (float)1.249;
+        options->cold_latency = 1196;
+        options->write_speed = (float)0.5;
+        options->restore_latency = 999;
+        options->net_bandwidth = (float)(3.59/8.0);
     }
+
     else {
-        test_speeds_containers(options);
+        test_speeds(options);
+        if (options->podman == 1) {
+            test_speeds_containers(options);
+        }
+        if (options->net_cache == 1) {
+            options->net_bandwidth = test_bandwidth();
+            printf("Net bandwidth: %fGbit/s\n", options->net_bandwidth * 8);
+        }
     }
-    //options->read_speed = 2000;
-    //options->write_speed = 2000;
+
+
 }
+
+

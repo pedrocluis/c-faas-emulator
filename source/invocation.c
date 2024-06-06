@@ -92,6 +92,7 @@ void allocate_invocation(args_t *args) {
     invocation_t *inRam = searchRam(args->invocation->hash_function, args->ram);
     if (inRam != NULL) {
         type = 'w';
+        args->invocation->restored = inRam->restored;
         //If it's in RAM, it's a warm start, and we don't need to touch memory values
         pthread_mutex_lock(&args->stats->lock_starts);
         args->stats->warm += 1;
@@ -138,12 +139,52 @@ void allocate_invocation(args_t *args) {
         args->ram->memory -= args->invocation->memory;
         pthread_mutex_unlock(&args->ram->cache_lock);
 
-        int foundInDisk;
         s = getMs();
-        foundInDisk = findInDisk(args->invocation->hash_function, args->disk);
+        createContainer(args->containers, args->invocation, tid);
+        createContainerLatency = getMs() - s;
+        s = getMs();
+
+        float expectedLuke;
+        float expectedRemote;
+
+        int foundInDisk = findInDisk(args->invocation->hash_function, args->disk);
+        int foundInNet = findInNetwork(args->invocation->hash_function, args->disk->net_cache);
+
+        pthread_mutex_lock(&args->disk->net_cache->read_buffer->read_lock);
+        expectedRemote = (float)args->disk->net_cache->time_to_read + ((float)args->invocation->memory / args->disk->net_cache->net_speed) + args->restore_lat;
+        pthread_mutex_unlock(&args->disk->net_cache->read_buffer->read_lock);
+
+        pthread_mutex_lock(&args->disk->read_buffer->read_lock);
+        expectedLuke = (float)args->disk->time_to_read + ((float)args->invocation->memory / args->disk->read_speed) + args->restore_lat;
+        pthread_mutex_unlock(&args->disk->read_buffer->read_lock);
+
+        int start_type = 0;
+
+        if (foundInDisk && foundInNet) {
+            if (expectedLuke < expectedRemote && expectedLuke < args->cold_lat) {
+                start_type = 1;
+            }
+            if (expectedRemote < expectedLuke && expectedRemote < args->cold_lat) {
+                start_type = 2;
+            }
+        }
+        else {
+            if (foundInDisk) {
+                if (expectedLuke < args->cold_lat) {
+                    start_type = 1;
+                }
+            }
+            if (foundInNet) {
+                if (expectedRemote < args->cold_lat) {
+                    start_type = 2;
+                }
+            }
+        }
+        s = getMs();
         findInDiskLatency = getMs() - s;
         int read_bool = 0;
-        if (foundInDisk) {
+        int netread_bool = 0;
+        if (start_type == 1) {
             //Function is present in disk cache
             pthread_cond_t cond;
             pthread_mutex_t cond_lock;
@@ -154,7 +195,7 @@ void allocate_invocation(args_t *args) {
             args->invocation->conc_n = &read_bool;
             s = getMs();
             //Add function to read queue and wait for signal that it has been read
-            addToReadBuffer(args->invocation, args->disk, args->cold_lat);
+            addToReadBuffer(args->invocation, args->disk, args->cold_lat, args->restore_lat);
             addToReadBufferLatency = getMs() - s;
             s =getMs();
             pthread_mutex_lock(&cond_lock);
@@ -164,23 +205,63 @@ void allocate_invocation(args_t *args) {
             pthread_mutex_unlock(&cond_lock);
             pthread_mutex_destroy(&cond_lock);
             pthread_cond_destroy(&cond);
-            restoreCheckpointLatency = getMs() - s;
+        }
+
+        if (start_type == 2) {
+            //Function is present in disk cache
+            pthread_cond_t cond;
+            pthread_mutex_t cond_lock;
+            pthread_mutex_init(&cond_lock, NULL);
+            pthread_cond_init(&cond, NULL);
+            args->invocation->cond = &cond;
+            args->invocation->cond_lock = &cond_lock;
+            args->invocation->conc_n = &netread_bool;
+            s = getMs();
+            //Add function to read queue and wait for signal that it has been read
+            addToNetworkReadBuffer(args->invocation, args->disk->net_cache, args->cold_lat, args->restore_lat);
+            addToReadBufferLatency = getMs() - s;
+            s = getMs();
+            pthread_mutex_lock(&cond_lock);
+            while (netread_bool == 0) {
+                pthread_cond_wait(&cond, &cond_lock);
+            }
+            pthread_mutex_unlock(&cond_lock);
+            pthread_mutex_destroy(&cond_lock);
+            pthread_cond_destroy(&cond);
         }
 
         pthread_mutex_lock(&args->ram->cache_lock);
-        if (read_bool == 1) {
-            type = 'l';
-            pthread_mutex_lock(&args->stats->lock_starts);
-            args->stats->luke += 1;
-            pthread_mutex_unlock(&args->stats->lock_starts);
-            if (args->logging) {
-                printf("Brought %d MB from disk\n", args->invocation->memory);
+        if (read_bool == 1 || netread_bool == 1) {
+            if (read_bool == 1) {
+                type = 'l';
+                pthread_mutex_lock(&args->stats->lock_starts);
+                args->stats->luke += 1;
+                pthread_mutex_unlock(&args->stats->lock_starts);
+                if (args->logging) {
+                    printf("Brought %d MB from disk\n", args->invocation->memory);
+                }
+                *(args->lukewarmStarts)+=1;
             }
-            *(args->lukewarmStarts)+=1;
+            if (netread_bool == 1) {
+                type = 'r';
+                pthread_mutex_lock(&args->stats->lock_starts);
+                args->stats->remote += 1;
+                pthread_mutex_unlock(&args->stats->lock_starts);
+                if (args->logging) {
+                    printf("Brought %d MB from disk\n", args->invocation->memory);
+                }
+                *(args->remoteStarts)+=1;
+            }
+            args->invocation->restored = 1;
+            if (args->containers != NULL) {
+                restoreCheckpoint(args->containers->api_handles[tid], args->invocation->container_id, &args->invocation->restore_data, args->containers);
+                restoreCheckpointLatency = getMs() - s;
+            }
         }
         else {
             //If it's not in disk or the read has been rejected, it's a cold start
             type = 'c';
+            args->invocation->restored = 0;
             pthread_mutex_lock(&args->stats->lock_starts);
             args->stats->cold += 1;
             pthread_mutex_unlock(&args->stats->lock_starts);
@@ -193,11 +274,7 @@ void allocate_invocation(args_t *args) {
 
             if (args->containers != NULL) {
                 //Run container and initialize function
-                s = getMs();
-                char *c_id = createContainer(args->containers, args->invocation, tid, 0);
-                createContainerLatency = getMs() - s;
-                s = getMs();
-                startContainer(args->containers, c_id, tid);
+                startContainer(args->containers, args->invocation->container_id, tid);
                 startContainerLatency = getMs() - s;
                 s = getMs();
 
@@ -236,7 +313,14 @@ void allocate_invocation(args_t *args) {
     pthread_mutex_unlock(&args->ram->cache_lock);
 
     if (args->containers != NULL) {
-        runFunction(args->invocation->container_port, args->invocation->memory, args->invocation->duration, tid, args->containers, args->invocation->handle);
+        if (args->sleep == 1) {
+            void * mem = malloc(args->invocation->memory * MEGA);
+            usleep(args->invocation->duration * 1000);
+            free(mem);
+        }
+        else {
+            runFunction(args->invocation->container_port, args->invocation->memory, args->invocation->duration, tid, args->containers, args->invocation->handle);
+        }
     }
     else {
         if (extra_sleep) {

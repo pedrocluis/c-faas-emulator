@@ -10,12 +10,14 @@ void initFiles(stats_t * stats) {
     stats->f_warm = fopen("stats/warm.txt", "w");
     stats->f_lukewarm = fopen("stats/lukewarm.txt", "w");
     stats->f_failed = fopen("stats/failed.txt", "w");
+    stats->f_remote = fopen("stats/remote.txt", "w");
     stats->minute = 0;
     stats->lastMs = 0;
     stats->cold = 0;
     stats->warm = 0;
     stats->luke = 0;
     stats->failed = 0;
+    stats->remote = 0;
     pthread_mutex_init(&stats->lock_lat, NULL);
     pthread_mutex_init(&stats->lock_starts, NULL);
 }
@@ -26,6 +28,7 @@ void closeFiles(stats_t * stats) {
     fclose(stats->f_warm);
     fclose(stats->f_lukewarm);
     fclose(stats->f_failed);
+    fclose(stats->f_remote);
     pthread_mutex_destroy(&stats->lock_lat);
     pthread_mutex_destroy(&stats->lock_starts);
     thpool_wait(stats->pool);
@@ -61,10 +64,13 @@ void saveStarts(stats_t * stats, long ms) {
     fprintf(stats->f_warm, "%d,%d\n", stats->minute, stats->warm);
     fprintf(stats->f_lukewarm, "%d,%d\n", stats->minute, stats->luke);
     fprintf(stats->f_failed, "%d,%d\n", stats->minute, stats->failed);
+    fprintf(stats->f_remote, "%d,%d\n", stats->minute, stats->remote);
     stats->minute += 1;
     stats->cold = 0;
     stats->warm = 0;
     stats->luke = 0;
     stats->failed = 0;
+    stats->remote = 0;
+
     pthread_mutex_unlock(&stats->lock_starts);
 }

@@ -14,7 +14,7 @@ int getPort(CONTAINERS *containers);
 
 void destroyPodman(CONTAINERS * containers, int n_threads);
 
-char* createContainer(CONTAINERS *containers, invocation_t * invocation, int tid, int handle_flag);
+void createContainer(CONTAINERS *containers, invocation_t * invocation, int tid);
 
 void startContainer(CONTAINERS *containers, char * id, int tid);
 
@@ -24,9 +24,9 @@ void runFunction(int port, int memory, int duration, int tid, CONTAINERS *contai
 
 void removeContainer(CONTAINERS *containers, char *id, int port, CURL *curl);
 
-void checkpointContainer(CURL* handle, char *id, char *function_id);
+int checkpointContainer(CURL* handle, char *id, char *function_id, int restored, net_cache_t * net_cache);
 
-void restoreCheckpoint(CURL* handle, char *id, char * function_id);
+void restoreCheckpoint(CURL* handle, char *id, struct string *data, CONTAINERS *containers);
 
 void killContainer(char *id, CURL* curl);
 
